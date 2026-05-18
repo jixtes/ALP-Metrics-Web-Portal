@@ -1,0 +1,9 @@
+.venv
+__pycache__/
+*.pyc
+*.env
+instance/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+

@@ -1,0 +1,12 @@
+Flask
+Flask-Cors
+Flask-Security-Too
+Flask-SQLAlchemy
+Flask-WTF
+email-validator
+pandas
+python-dotenv
+requests
+openpyxl
+XlsxWriter
+IPython
