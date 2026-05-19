@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import io
-import logging
 import os
 import subprocess
 import sys
+import traceback
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -27,6 +29,7 @@ WEB_PORTAL_ROOT = Path(__file__).resolve().parents[1]
 APP_DB_PATH = WEB_PORTAL_ROOT / "instance" / "alp_metrics.db"
 FINAL_EXPORT_PATH = Path("files/pipeline/alp_metrics_final_data.csv")
 LABELLED_EXPORT_PATH = Path("files/pipeline/alp_metrics_final_data_with_labels.csv")
+LATEST_PIPELINE_LOG_PATH = Path("files/pipeline/latest_run.log")
 RUN_LOCK = Lock()
 
 SUMMARY_COLUMNS = {
@@ -75,6 +78,13 @@ RECENT_DAYS_LIMIT = 7
 ENUMERATOR_DAILY_LIMIT = 50
 
 
+class PipelineExecutionError(Exception):
+    def __init__(self, original: Exception, run_log: str) -> None:
+        super().__init__(str(original))
+        self.original = original
+        self.run_log = run_log
+
+
 def run_pipeline_and_snapshot(
     db_path: Path,
     *,
@@ -102,10 +112,10 @@ def run_pipeline_and_snapshot(
         run_log = ""
         try:
             config = PipelineConfig(extract_mode=extract_mode)
+            _write_latest_pipeline_log(config.root_dir, "Pipeline execution started.\n")
             run_log = _run_pipeline_with_log_capture(config)
             export_path = _resolve_export_path(config.root_dir)
             survey_rows, record_rows = build_snapshot_rows(export_path)
-            submission_count = sum(row["submission_count"] for row in survey_rows)
             replace_run_snapshot(db_path, run_id=run_id, survey_rows=survey_rows, record_rows=record_rows)
 
             upload_rows = []
@@ -127,26 +137,22 @@ def run_pipeline_and_snapshot(
                 run_id=run_id,
                 status="completed",
                 completed_at=_now_iso(),
-                row_count=submission_count,
-                survey_count=len(survey_rows),
-                message=(
-                    f"Pipeline completed and indexed {submission_count} submissions."
-                    f"{upload_message}"
-                ),
+                message=f"Pipeline completed.{upload_message}",
                 pipeline_commit_after=get_pipeline_repo_status().get("commit"),
                 run_log=run_log,
             )
             return {
                 "run_id": run_id,
                 "status": "completed",
-                "row_count": submission_count,
-                "survey_count": len(survey_rows),
                 "export_path": str(export_path),
                 "pipeline": get_pipeline_repo_status(),
                 "log": run_log,
                 "uploads": upload_rows,
             }
         except Exception as exc:
+            if isinstance(exc, PipelineExecutionError):
+                run_log = exc.run_log
+                exc = exc.original
             if not run_log:
                 run_log = str(exc)
             complete_pipeline_run(
@@ -154,8 +160,6 @@ def run_pipeline_and_snapshot(
                 run_id=run_id,
                 status="failed",
                 completed_at=_now_iso(),
-                row_count=None,
-                survey_count=None,
                 message=str(exc),
                 pipeline_commit_after=get_pipeline_repo_status().get("commit"),
                 run_log=run_log,
@@ -168,22 +172,29 @@ def get_pipeline_repo_status() -> dict[str, Any]:
     branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"], root_dir)
     upstream = _git_output(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], root_dir)
     commit = _git_output(["rev-parse", "HEAD"], root_dir)
-    short_commit = _git_output(["rev-parse", "--short", "HEAD"], root_dir)
-    remote = _git_output(["config", "--get", "remote.origin.url"], root_dir)
     dirty_output = _git_output(["status", "--porcelain"], root_dir)
-    latest_subject = _git_output(["log", "-1", "--pretty=%s"], root_dir)
-    latest_commit_at = _git_output(["log", "-1", "--format=%cI"], root_dir)
     return {
         "root": str(root_dir),
         "branch": branch,
         "upstream": upstream or (f"origin/{branch}" if branch else ""),
         "commit": commit,
-        "shortCommit": short_commit,
-        "remote": remote,
         "isDirty": bool(dirty_output),
         "dirtyFiles": dirty_output.splitlines() if dirty_output else [],
-        "latestSubject": latest_subject,
-        "latestCommitAt": latest_commit_at,
+    }
+
+
+def get_pipeline_commit_details(commit: str | None) -> dict[str, str]:
+    if not commit:
+        return {}
+
+    root_dir = PipelineConfig().root_dir
+    subject = _git_output(["show", "-s", "--format=%s", commit], root_dir)
+    committed_at = _git_output(["show", "-s", "--format=%cI", commit], root_dir)
+    author = _git_output(["show", "-s", "--format=%an", commit], root_dir)
+    return {
+        "pipeline_commit_subject": subject,
+        "pipeline_commit_at": committed_at,
+        "pipeline_commit_author": author,
     }
 
 
@@ -220,15 +231,26 @@ def pull_pipeline_repo() -> dict[str, Any]:
 
 def _run_pipeline_with_log_capture(config: PipelineConfig) -> str:
     stream = io.StringIO()
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-    root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
     try:
-        run_pipeline(config)
-    finally:
-        root_logger.removeHandler(handler)
-    return stream.getvalue().strip()
+        with warnings.catch_warnings(), contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            warnings.simplefilter("ignore")
+            run_pipeline(config)
+    except Exception as exc:
+        traceback.print_exc(file=stream)
+        run_log = stream.getvalue().strip()
+        _write_latest_pipeline_log(config.root_dir, run_log)
+        raise PipelineExecutionError(exc, run_log) from exc
+
+    run_log = stream.getvalue().strip()
+    _write_latest_pipeline_log(config.root_dir, run_log)
+    return run_log
+
+
+def _write_latest_pipeline_log(root_dir: Path, run_log: str) -> Path:
+    log_path = root_dir / LATEST_PIPELINE_LOG_PATH
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(run_log.rstrip() + "\n", encoding="utf-8")
+    return log_path
 
 
 def _git_output(args: list[str], root_dir: Path) -> str:

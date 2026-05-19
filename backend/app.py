@@ -15,7 +15,13 @@ from .database import (
     initialize_database,
     replace_powerbi_report_selections,
 )
-from .service import APP_DB_PATH, get_pipeline_repo_status, pull_pipeline_repo, run_pipeline_and_snapshot
+from .service import (
+    APP_DB_PATH,
+    get_pipeline_commit_details,
+    get_pipeline_repo_status,
+    pull_pipeline_repo,
+    run_pipeline_and_snapshot,
+)
 
 
 def _current_powerbi_identity() -> tuple[str | None, list[str] | None]:
@@ -54,6 +60,9 @@ def create_app() -> Flask:
             ]
         if not current_user_upload_access():
             dashboard_data["uploads"] = []
+        latest_run = dashboard_data.get("latest_run")
+        if latest_run and latest_run.get("pipeline_commit_after"):
+            latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after")))
         return jsonify(dashboard_data)
 
     @app.get("/api/surveys/<int:survey_id>/records")

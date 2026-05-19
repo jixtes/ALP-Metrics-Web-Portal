@@ -650,6 +650,81 @@ tbody tr:hover,
   font-weight: 700;
 }
 
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(24, 60, 54, 0.08);
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.status-tag-uploaded {
+  background: rgba(27, 128, 82, 0.14);
+  color: #146c43;
+}
+
+.sharepoint-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px 5px 7px;
+  border: 1px solid rgba(19, 33, 32, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #132120;
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sharepoint-link-button:hover {
+  border-color: rgba(19, 33, 32, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.sharepoint-link-mark {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1.7px solid currentColor;
+  border-radius: 4px;
+  opacity: 0.72;
+}
+
+.sharepoint-link-mark::before {
+  content: "";
+  position: absolute;
+  top: -1.7px;
+  right: -1.7px;
+  width: 7px;
+  height: 7px;
+  border-left: 1.7px solid currentColor;
+  border-bottom: 1.7px solid currentColor;
+  border-bottom-left-radius: 3px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.sharepoint-link-mark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 8px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
 .inline-instruction {
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -924,6 +999,14 @@ tbody tr:hover,
   background: rgba(255, 255, 255, 0.58);
 }
 
+.commit-card-meta {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .report-picker-list {
   display: grid;
   gap: 12px;
@@ -997,6 +1080,10 @@ tbody tr:hover,
   font: 0.82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.pipeline-log-spaced {
+  margin-top: 14px;
 }
 
 .upload-status {

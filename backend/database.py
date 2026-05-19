@@ -146,8 +146,6 @@ def complete_pipeline_run(
     run_id: int,
     status: str,
     completed_at: str,
-    row_count: int | None,
-    survey_count: int | None,
     message: str | None,
     pipeline_commit_after: str | None = None,
     run_log: str | None = None,
@@ -156,11 +154,10 @@ def complete_pipeline_run(
         connection.execute(
             """
             UPDATE pipeline_runs
-            SET status = ?, completed_at = ?, row_count = ?, survey_count = ?,
-                message = ?, pipeline_commit_after = ?, run_log = ?
+            SET status = ?, completed_at = ?, message = ?, pipeline_commit_after = ?, run_log = ?
             WHERE id = ?
             """,
-            (status, completed_at, row_count, survey_count, message, pipeline_commit_after, run_log, run_id),
+            (status, completed_at, message, pipeline_commit_after, run_log, run_id),
         )
         connection.commit()
 
@@ -246,7 +243,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
         latest_run = connection.execute(
             """
             SELECT id, status, extract_mode, started_at, triggered_by_email, triggered_by_name,
-                   completed_at, row_count, survey_count, message, pipeline_branch,
+                   completed_at, message, pipeline_branch,
                    pipeline_commit_before, pipeline_commit_after, run_log
             FROM pipeline_runs
             ORDER BY id DESC

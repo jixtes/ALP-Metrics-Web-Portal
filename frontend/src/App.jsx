@@ -29,6 +29,14 @@ const surveyColumns = [
   { key: "last_submission_at", label: "Latest", type: "date" },
 ];
 
+const uploadColumns = [
+  { key: "file_name", label: "File", type: "text" },
+  { key: "folder", label: "Folder", type: "text" },
+  { key: "status", label: "Status", type: "text" },
+  { key: "web_url", label: "Link", type: "text" },
+  { key: "uploaded_at", label: "Uploaded", type: "date" },
+];
+
 let powerBIClientPromise;
 
 function formatDate(value) {
@@ -78,6 +86,22 @@ function compareSurveyValues(left, right, type) {
   }
 
   return String(left ?? "").localeCompare(String(right ?? ""), undefined, { sensitivity: "base" });
+}
+
+function getSharePointFolder(item) {
+  const rawPath = item.sharepoint_path || item.local_path || "";
+  const normalizedPath = String(rawPath).replaceAll("\\", "/");
+  const rootMarker = "alp-metrics-pipeline/";
+  const rootIndex = normalizedPath.toLowerCase().indexOf(rootMarker);
+  const relativePath =
+    rootIndex >= 0 ? normalizedPath.slice(rootIndex + rootMarker.length) : normalizedPath.replace(/^\/+/, "");
+  const parts = relativePath.split("/").filter(Boolean);
+
+  if (parts.length <= 1) {
+    return ".";
+  }
+
+  return parts.slice(0, -1).join("/");
 }
 
 function buildEnabledModules(survey) {
@@ -264,8 +288,13 @@ function App() {
   const [mode, setMode] = useState("surveycto");
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
+  const [uploadFilter, setUploadFilter] = useState("");
   const [sortConfig, setSortConfig] = useState({
     key: "last_submission_at",
+    direction: "desc",
+  });
+  const [uploadSortConfig, setUploadSortConfig] = useState({
+    key: "uploaded_at",
     direction: "desc",
   });
   const [csrfToken, setCsrfToken] = useState("");
@@ -792,6 +821,22 @@ function App() {
     });
   }
 
+  function handleUploadSort(columnKey) {
+    setUploadSortConfig((current) => {
+      if (current.key === columnKey) {
+        return {
+          key: columnKey,
+          direction: current.direction === "asc" ? "desc" : "asc",
+        };
+      }
+
+      return {
+        key: columnKey,
+        direction: columnKey === "uploaded_at" ? "desc" : "asc",
+      };
+    });
+  }
+
   function togglePowerBIReport(reportId) {
     setSelectedPowerBIReports((current) => {
       if (current.includes(reportId)) {
@@ -1134,6 +1179,27 @@ function App() {
     const column = surveyColumns.find((item) => item.key === sortConfig.key) ?? surveyColumns[0];
     const comparison = compareSurveyValues(left[column.key], right[column.key], column.type);
     return sortConfig.direction === "asc" ? comparison : -comparison;
+  });
+  const normalizedUploadFilter = uploadFilter.trim().toLowerCase();
+  const uploadsWithFolders = dashboard.uploads.map((item) => ({
+    ...item,
+    folder: getSharePointFolder(item),
+  }));
+  const filteredUploads = uploadsWithFolders.filter((item) => {
+    if (!normalizedUploadFilter) {
+      return true;
+    }
+
+    return [item.file_name, item.folder, item.local_path, item.sharepoint_path, item.status, item.web_url]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedUploadFilter));
+  });
+  const sortedUploads = [...filteredUploads].sort((left, right) => {
+    const column = uploadColumns.find((item) => item.key === uploadSortConfig.key) ?? uploadColumns[0];
+    const leftValue = column.key === "web_url" ? left.web_url || "N/A" : left[column.key];
+    const rightValue = column.key === "web_url" ? right.web_url || "N/A" : right[column.key];
+    const comparison = compareSurveyValues(leftValue, rightValue, column.type);
+    return uploadSortConfig.direction === "asc" ? comparison : -comparison;
   });
 
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
@@ -1629,36 +1695,6 @@ function App() {
             {activeSettingsSection === "pipeline" ? (
               canManagePipeline ? (
                 <div className="settings-stack">
-                  <div className="settings-summary">
-                    <div className="stat-card compact-stat-card">
-                      <span>Branch</span>
-                      <strong>{pipelineStatus?.branch || "N/A"}</strong>
-                    </div>
-                    <div className="stat-card compact-stat-card">
-                      <span>Last run</span>
-                      <strong>{formatDate(dashboard.latest_run?.completed_at)}</strong>
-                    </div>
-                  </div>
-
-                  <div className="detail-section-block">
-                    <div className="detail-section-heading">
-                      <h3>Pipeline version</h3>
-                      <p>Current Git version used by the portal.</p>
-                    </div>
-                    <div className="preview-list">
-                      <div className="preview-item">
-                        <div className="preview-heading">
-                          <strong>{pipelineStatus?.latestSubject || "No commit information loaded."}</strong>
-                          <span>{formatDate(pipelineStatus?.latestCommitAt)}</span>
-                        </div>
-                        <div className="preview-metadata">
-                          <span>{pipelineStatus?.commit || "N/A"}</span>
-                          <span>{pipelineStatus?.remote || "No remote configured"}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="settings-actions">
                     <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isRunning}>
                       {isPullingPipeline ? "Pulling pipeline..." : "Pull latest pipeline code"}
@@ -1683,24 +1719,35 @@ function App() {
 
                   {dashboard.latest_run ? (
                     <div className="detail-section-block">
-                      <div className="detail-section-heading">
-                        <h3>Latest run</h3>
-                        <p>
-                          {dashboard.latest_run.status} · {dashboard.latest_run.row_count ?? 0} rows ·{" "}
-                          {dashboard.latest_run.survey_count ?? 0} surveys
-                        </p>
-                      </div>
                       <div className="settings-summary">
                         <div className="stat-card compact-stat-card">
                           <span>Run commit</span>
                           <strong>{dashboard.latest_run.pipeline_commit_after?.slice(0, 7) || "N/A"}</strong>
+                          <p className="commit-card-meta">
+                            Branch: {dashboard.latest_run.pipeline_branch || pipelineStatus?.branch || "N/A"}
+                          </p>
+                          <p className="commit-card-meta">
+                            {dashboard.latest_run.pipeline_commit_subject || "Commit message unavailable."}
+                          </p>
+                          <p className="commit-card-meta">
+                            {formatDate(dashboard.latest_run.pipeline_commit_at)}
+                            {dashboard.latest_run.pipeline_commit_author
+                              ? ` by ${dashboard.latest_run.pipeline_commit_author}`
+                              : ""}
+                          </p>
                         </div>
                         <div className="stat-card compact-stat-card">
-                          <span>Triggered by</span>
-                          <strong>{dashboard.latest_run.triggered_by_name || dashboard.latest_run.triggered_by_email || "N/A"}</strong>
+                          <span>Last run</span>
+                          <strong>{formatDate(dashboard.latest_run.completed_at)}</strong>
+                          <p className="commit-card-meta">
+                            Triggered by:{" "}
+                            {dashboard.latest_run.triggered_by_name || dashboard.latest_run.triggered_by_email || "N/A"}
+                          </p>
                         </div>
                       </div>
-                      {dashboard.latest_run.run_log ? <pre className="pipeline-log">{dashboard.latest_run.run_log}</pre> : null}
+                      {dashboard.latest_run.run_log ? (
+                        <pre className="pipeline-log pipeline-log-spaced">{dashboard.latest_run.run_log}</pre>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -2307,49 +2354,85 @@ function App() {
         ) : null}
 
         {activeDashboardTab === "uploads" ? (
-          <article className="detail-card">
-            <div className="section-heading">
-              <h2>SharePoint uploads</h2>
-              <p>Files produced by the latest pipeline run and their upload status.</p>
-            </div>
+          <section className="single-panel-grid">
+            <article className="detail-card survey-split-panel">
+              <section className="survey-split-column survey-split-column-list">
+                <div className="section-heading">
+                  <h2>SharePoint uploads</h2>
+                  <p>Files produced by the latest pipeline run and their upload status.</p>
+                </div>
 
-            {dashboard.uploads.length === 0 ? (
-              <div className="table-empty">No uploads recorded for the latest run.</div>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>File</th>
-                      <th>Status</th>
-                      <th>Link</th>
-                      <th>Uploaded</th>
-                      <th>Message</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboard.uploads.map((item) => (
-                      <tr key={item.id}>
-                        <td data-label="File">{item.file_name}</td>
-                        <td data-label="Status">{item.status}</td>
-                        <td data-label="Link">
-                          {item.web_url ? (
-                            <a href={item.web_url} target="_blank" rel="noreferrer">
-                              Open file
-                            </a>
-                          ) : (
-                            "N/A"
-                          )}
-                        </td>
-                        <td data-label="Uploaded">{formatDate(item.uploaded_at)}</td>
-                        <td data-label="Message">{item.message || "N/A"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </article>
+                <div className="filter-row">
+                  <label className="filter-label" htmlFor="upload-filter">
+                    Quick filter
+                  </label>
+                  <input
+                    id="upload-filter"
+                    type="text"
+                    value={uploadFilter}
+                    onChange={(event) => setUploadFilter(event.target.value)}
+                  />
+                </div>
+
+                {dashboard.uploads.length === 0 ? (
+                  <div className="table-empty">No uploads recorded for the latest run.</div>
+                ) : filteredUploads.length === 0 ? (
+                  <div className="table-empty">No uploads match the current filter.</div>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          {uploadColumns.map((column) => {
+                            const isActive = uploadSortConfig.key === column.key;
+                            const sortIndicator = isActive ? (uploadSortConfig.direction === "asc" ? "↑" : "↓") : "↕";
+
+                            return (
+                              <th key={column.key}>
+                                <button
+                                  type="button"
+                                  className={`sort-button${isActive ? " sort-button-active" : ""}`}
+                                  onClick={() => handleUploadSort(column.key)}
+                                >
+                                  <span>{column.label}</span>
+                                  <span className="sort-indicator">{sortIndicator}</span>
+                                </button>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedUploads.map((item) => (
+                          <tr key={item.id}>
+                            <td data-label="File">{item.file_name}</td>
+                            <td data-label="Folder">{item.folder}</td>
+                            <td data-label="Status">
+                              <span className={`status-tag status-tag-${String(item.status || "unknown").toLowerCase()}`}>
+                                {item.status || "N/A"}
+                              </span>
+                            </td>
+                            <td data-label="Link">
+                              {item.web_url ? (
+                                <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
+                                  <span className="sharepoint-link-mark" aria-hidden="true">
+                                  </span>
+                                  Open file
+                                </a>
+                              ) : (
+                                "N/A"
+                              )}
+                            </td>
+                            <td data-label="Uploaded">{formatDate(item.uploaded_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </article>
+          </section>
         ) : null}
 
         {activeDashboardTab.startsWith("powerbi:") ? (
