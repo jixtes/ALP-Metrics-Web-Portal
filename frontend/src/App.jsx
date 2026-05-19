@@ -531,6 +531,13 @@ function App() {
     }
   }
 
+  async function refreshPipelineView() {
+    await loadDashboard(selectedSurveyId);
+    if (canManagePipeline) {
+      await loadPipelineStatus();
+    }
+  }
+
   async function loadUsers() {
     if (!canManageUsers) {
       return;
@@ -741,14 +748,20 @@ function App() {
         method: "POST",
         body: { extractMode: mode },
       });
-      await loadDashboard(selectedSurveyId);
-      if (canManagePipeline) {
-        await loadPipelineStatus();
-      }
     } catch (runError) {
       setError(runError.message);
     } finally {
+      await refreshPipelineView();
       setIsRunning(false);
+    }
+  }
+
+  async function handleRefreshPipelineStatus() {
+    setPipelineError("");
+    try {
+      await refreshPipelineView();
+    } catch (refreshError) {
+      setPipelineError(refreshError.message);
     }
   }
 
@@ -769,10 +782,11 @@ function App() {
       } else {
         setPipelineMessage("Pipeline code updated.");
       }
+      await refreshPipelineView();
     } catch (pullError) {
       setPipelineError(pullError.message);
       try {
-        await loadPipelineStatus();
+        await refreshPipelineView();
       } catch (statusError) {
         // The visible error above is the pull failure; status refresh is best-effort.
       }
@@ -1699,7 +1713,7 @@ function App() {
                     <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isRunning}>
                       {isPullingPipeline ? "Pulling pipeline..." : "Pull latest pipeline code"}
                     </button>
-                    <button type="button" className="secondary-button" onClick={loadPipelineStatus} disabled={isPipelineStatusLoading}>
+                    <button type="button" className="secondary-button" onClick={handleRefreshPipelineStatus} disabled={isPipelineStatusLoading}>
                       {isPipelineStatusLoading ? "Refreshing..." : "Refresh status"}
                     </button>
                     <button type="button" className="secondary-button" onClick={handleRunPipeline} disabled={isRunning}>

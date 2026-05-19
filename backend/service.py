@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import io
 import os
+import shutil
 import subprocess
 import sys
 import traceback
@@ -19,10 +21,6 @@ PIPELINE_ROOT = Path(os.getenv("ALP_PIPELINE_REPO_PATH", DEFAULT_PIPELINE_ROOT))
 if PIPELINE_ROOT.exists() and str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from config import PipelineConfig
-from pipeline import run_pipeline
-from scripts.sharepoint import upload_export_files
-
 from .database import complete_pipeline_run, insert_pipeline_run, replace_run_snapshot, replace_run_uploads
 
 WEB_PORTAL_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +29,16 @@ FINAL_EXPORT_PATH = Path("files/pipeline/alp_metrics_final_data.csv")
 LABELLED_EXPORT_PATH = Path("files/pipeline/alp_metrics_final_data_with_labels.csv")
 LATEST_PIPELINE_LOG_PATH = Path("files/pipeline/latest_run.log")
 RUN_LOCK = Lock()
+PIPELINE_MODULE_NAMES = {
+    "config",
+    "context",
+    "pipeline",
+}
+PIPELINE_MODULE_PREFIXES = (
+    "generated",
+    "scripts",
+    "utils",
+)
 
 SUMMARY_COLUMNS = {
     "survey_name": "project",
@@ -111,7 +119,7 @@ def run_pipeline_and_snapshot(
     with RUN_LOCK:
         run_log = ""
         try:
-            config = PipelineConfig(extract_mode=extract_mode)
+            config = _build_pipeline_config(extract_mode=extract_mode)
             _write_latest_pipeline_log(config.root_dir, "Pipeline execution started.\n")
             run_log = _run_pipeline_with_log_capture(config)
             export_path = _resolve_export_path(config.root_dir)
@@ -120,7 +128,7 @@ def run_pipeline_and_snapshot(
 
             upload_rows = []
             if upload_to_sharepoint:
-                upload_rows = upload_export_files(config.root_dir)
+                upload_rows = _upload_export_files(config.root_dir)
             replace_run_uploads(db_path, run_id=run_id, upload_rows=upload_rows)
 
             uploaded_count = sum(1 for row in upload_rows if row["status"] == "uploaded")
@@ -168,7 +176,7 @@ def run_pipeline_and_snapshot(
 
 
 def get_pipeline_repo_status() -> dict[str, Any]:
-    root_dir = PipelineConfig().root_dir
+    root_dir = _build_pipeline_config().root_dir
     branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"], root_dir)
     upstream = _git_output(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], root_dir)
     commit = _git_output(["rev-parse", "HEAD"], root_dir)
@@ -187,7 +195,7 @@ def get_pipeline_commit_details(commit: str | None) -> dict[str, str]:
     if not commit:
         return {}
 
-    root_dir = PipelineConfig().root_dir
+    root_dir = _build_pipeline_config().root_dir
     subject = _git_output(["show", "-s", "--format=%s", commit], root_dir)
     committed_at = _git_output(["show", "-s", "--format=%cI", commit], root_dir)
     author = _git_output(["show", "-s", "--format=%an", commit], root_dir)
@@ -199,7 +207,7 @@ def get_pipeline_commit_details(commit: str | None) -> dict[str, str]:
 
 
 def pull_pipeline_repo() -> dict[str, Any]:
-    root_dir = PipelineConfig().root_dir
+    root_dir = _build_pipeline_config().root_dir
     before = get_pipeline_repo_status()
     if before["isDirty"]:
         return {
@@ -218,6 +226,9 @@ def pull_pipeline_repo() -> dict[str, Any]:
             timeout=300,
             check=False,
         )
+    if result.returncode == 0:
+        _clear_generated_pipeline_modules(root_dir)
+        _reload_pipeline_imports()
     after = get_pipeline_repo_status()
     output = "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
     return {
@@ -234,7 +245,7 @@ def _run_pipeline_with_log_capture(config: PipelineConfig) -> str:
     try:
         with warnings.catch_warnings(), contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
             warnings.simplefilter("ignore")
-            run_pipeline(config)
+            _run_pipeline(config)
     except Exception as exc:
         traceback.print_exc(file=stream)
         run_log = stream.getvalue().strip()
@@ -244,6 +255,37 @@ def _run_pipeline_with_log_capture(config: PipelineConfig) -> str:
     run_log = stream.getvalue().strip()
     _write_latest_pipeline_log(config.root_dir, run_log)
     return run_log
+
+
+def _build_pipeline_config(**kwargs: Any) -> Any:
+    config_module = importlib.import_module("config")
+    return config_module.PipelineConfig(**kwargs)
+
+
+def _run_pipeline(config: Any) -> Any:
+    pipeline_module = importlib.import_module("pipeline")
+    return pipeline_module.run_pipeline(config)
+
+
+def _upload_export_files(root_dir: Path) -> list[dict[str, Any]]:
+    sharepoint_module = importlib.import_module("scripts.sharepoint")
+    return sharepoint_module.upload_export_files(root_dir)
+
+
+def _clear_generated_pipeline_modules(root_dir: Path) -> None:
+    generated_dir = root_dir / "generated"
+    if generated_dir.exists():
+        shutil.rmtree(generated_dir)
+
+
+def _reload_pipeline_imports() -> None:
+    importlib.invalidate_caches()
+    for module_name in list(sys.modules):
+        if module_name in PIPELINE_MODULE_NAMES or module_name.startswith(
+            tuple(f"{prefix}." for prefix in PIPELINE_MODULE_PREFIXES)
+        ) or module_name in PIPELINE_MODULE_PREFIXES:
+            sys.modules.pop(module_name, None)
+    importlib.invalidate_caches()
 
 
 def _write_latest_pipeline_log(root_dir: Path, run_log: str) -> Path:
