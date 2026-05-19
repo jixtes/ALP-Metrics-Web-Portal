@@ -170,8 +170,8 @@ def replace_run_snapshot(
     record_rows: list[dict[str, Any]],
 ) -> None:
     with connect_database(db_path) as connection:
-        connection.execute("DELETE FROM survey_summaries WHERE run_id = ?", (run_id,))
-        connection.execute("DELETE FROM survey_records WHERE run_id = ?", (run_id,))
+        connection.execute("DELETE FROM survey_summaries")
+        connection.execute("DELETE FROM survey_records")
 
         connection.executemany(
             """
@@ -222,7 +222,7 @@ def replace_run_uploads(
     upload_rows: list[dict[str, Any]],
 ) -> None:
     with connect_database(db_path) as connection:
-        connection.execute("DELETE FROM pipeline_uploads WHERE run_id = ?", (run_id,))
+        connection.execute("DELETE FROM pipeline_uploads")
         connection.executemany(
             """
             INSERT INTO pipeline_uploads (
@@ -256,12 +256,6 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
             SELECT id, survey_name, project_ref, client, country, phase, cohort, assessor,
                    trc, fpa, blr, submission_count, first_submission_at, last_submission_at, preview_json
             FROM survey_summaries
-            WHERE run_id = (
-                SELECT id FROM pipeline_runs
-                WHERE status = 'completed'
-                ORDER BY id DESC
-                LIMIT 1
-            )
             ORDER BY submission_count DESC, survey_name ASC
             """
         ).fetchall()
@@ -270,11 +264,6 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
             """
             SELECT id, file_name, local_path, sharepoint_path, status, uploaded_at, web_url, message
             FROM pipeline_uploads
-            WHERE run_id = (
-                SELECT id FROM pipeline_runs
-                ORDER BY id DESC
-                LIMIT 1
-            )
             ORDER BY id ASC
             """
         ).fetchall()
