@@ -304,7 +304,7 @@ function App() {
     direction: "desc",
   });
   const [uploadSortConfig, setUploadSortConfig] = useState({
-    key: "uploaded_at",
+    key: "file_name",
     direction: "desc",
   });
   const [csrfToken, setCsrfToken] = useState("");
