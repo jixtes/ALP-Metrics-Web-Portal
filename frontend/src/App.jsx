@@ -1200,7 +1200,19 @@ function App() {
     }
 
     try {
-      await navigator.clipboard.writeText(issuedResetLink.resetUrl);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(issuedResetLink.resetUrl);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = issuedResetLink.resetUrl;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.top = "-1000px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
       setCopiedResetLink(true);
       window.setTimeout(() => setCopiedResetLink(false), 1800);
     } catch (copyError) {
@@ -1765,9 +1777,6 @@ function App() {
                             >
                               {copiedResetLink ? "Copied" : "Copy"}
                             </button>
-                            <a className="sharepoint-link-button" href={issuedResetLink.resetUrl} target="_blank" rel="noreferrer">
-                              Open reset link
-                            </a>
                           </div>
                         </div>
                       </div>
