@@ -125,6 +125,11 @@ select {
   color: #b73f2c;
 }
 
+.login-success {
+  margin: 0;
+  color: #1b8052;
+}
+
 .hero-card {
   display: grid;
   grid-template-columns: 2.2fr 1fr;

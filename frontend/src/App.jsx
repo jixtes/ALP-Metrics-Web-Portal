@@ -1469,6 +1469,7 @@ function App() {
           </h1>
 
           <form className="login-form" onSubmit={handleLoginSubmit} onKeyDown={handleLoginKeyDown} noValidate>
+            {loginMessage ? <p className="login-success">{loginMessage}</p> : null}
             <label htmlFor="email">Email</label>
             <input
               id="email"
@@ -1489,7 +1490,6 @@ function App() {
             />
 
             <button type="submit">Sign in</button>
-            {loginMessage ? <p className="run-note">{loginMessage}</p> : null}
             {loginError ? <p className="login-error">{loginError}</p> : null}
           </form>
 
