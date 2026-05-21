@@ -304,6 +304,11 @@ function App() {
     password: "",
   });
   const [loginError, setLoginError] = useState("");
+  const [loginMessage, setLoginMessage] = useState(() =>
+    new URLSearchParams(window.location.search).get("passwordReset") === "success"
+      ? "Now login with your new password."
+      : ""
+  );
   const [currentView, setCurrentView] = useState("dashboard");
   const [activeSettingsSection, setActiveSettingsSection] = useState("profile");
   const [activeDashboardTab, setActiveDashboardTab] = useState("surveys");
@@ -701,6 +706,7 @@ function App() {
   ]);
 
   function handleCredentialsChange(field, value) {
+    setLoginMessage("");
     setCredentials((current) => ({ ...current, [field]: value }));
   }
 
@@ -727,6 +733,7 @@ function App() {
         },
       });
       setAuthUser(data.user ?? null);
+      setLoginMessage("");
       setCredentials({ email: "", password: "" });
       setCurrentView("dashboard");
       setRoutePath("/");
@@ -1247,7 +1254,7 @@ function App() {
       setResetForm({ password: "", confirmPassword: "" });
       setResetValidationError("");
       setResetTokenExpiresAt("");
-      window.setTimeout(() => navigateTo("/"), 1200);
+      window.setTimeout(() => navigateTo("/?passwordReset=success"), 1200);
     } catch (submitError) {
       setResetFormError(submitError.message);
     } finally {
@@ -1476,6 +1483,7 @@ function App() {
             />
 
             <button type="submit">Sign in</button>
+            {loginMessage ? <p className="run-note">{loginMessage}</p> : null}
             {loginError ? <p className="login-error">{loginError}</p> : null}
           </form>
 
