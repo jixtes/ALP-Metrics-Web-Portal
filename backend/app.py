@@ -36,8 +36,7 @@ def create_app() -> Flask:
     instance_dir = root_dir / "instance"
     app = Flask(
         __name__,
-        static_folder=str(frontend_dist),
-        static_url_path="/",
+        static_folder=None,
         instance_path=str(instance_dir),
     )
     init_auth(app)
