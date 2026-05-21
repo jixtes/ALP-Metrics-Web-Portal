@@ -331,6 +331,8 @@ function App() {
   const [roles, setRoles] = useState([]);
   const [rolesError, setRolesError] = useState("");
   const [rolesMessage, setRolesMessage] = useState("");
+  const [roleSearch, setRoleSearch] = useState("");
+  const [isRoleFormVisible, setIsRoleFormVisible] = useState(false);
   const [isRolesLoading, setIsRolesLoading] = useState(false);
   const [isSavingRole, setIsSavingRole] = useState(false);
   const [deletingRoleId, setDeletingRoleId] = useState(null);
@@ -347,6 +349,8 @@ function App() {
   const [users, setUsers] = useState([]);
   const [usersError, setUsersError] = useState("");
   const [usersMessage, setUsersMessage] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [isUserFormVisible, setIsUserFormVisible] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
@@ -874,6 +878,7 @@ function App() {
 
   function resetUserForm() {
     setEditingUserId(null);
+    setIsUserFormVisible(false);
     setNewUserForm({
       email: "",
       fullName: "",
@@ -882,8 +887,22 @@ function App() {
     });
   }
 
+  function startCreatingUser() {
+    setEditingUserId(null);
+    setNewUserForm({
+      email: "",
+      fullName: "",
+      role: roles[0]?.name ?? "viewer",
+      password: "",
+    });
+    setUsersError("");
+    setUsersMessage("");
+    setIsUserFormVisible(true);
+  }
+
   function startEditingUser(user) {
     setEditingUserId(user.id);
+    setIsUserFormVisible(true);
     setNewUserForm({
       email: user.email,
       fullName: user.fullName || "",
@@ -903,6 +922,7 @@ function App() {
   }
 
   function resetRoleForm() {
+    setIsRoleFormVisible(false);
     setRoleForm({
       id: null,
       name: "",
@@ -913,6 +933,22 @@ function App() {
       allowedReportIds: [],
       uploadScope: "all",
     });
+  }
+
+  function startCreatingRole() {
+    setRoleForm({
+      id: null,
+      name: "",
+      description: "",
+      projectScope: "all",
+      allowedProjectRefs: [],
+      reportScope: "all",
+      allowedReportIds: [],
+      uploadScope: "all",
+    });
+    setRolesError("");
+    setRolesMessage("");
+    setIsRoleFormVisible(true);
   }
 
   function handleRoleFieldChange(field, value) {
@@ -932,6 +968,7 @@ function App() {
   }
 
   function startEditingRole(role) {
+    setIsRoleFormVisible(true);
     setRoleForm({
       id: role.id,
       name: role.name,
@@ -1223,6 +1260,32 @@ function App() {
     const rightValue = column.key === "web_url" ? right.web_url || "N/A" : right[column.key];
     const comparison = compareSurveyValues(leftValue, rightValue, column.type);
     return uploadSortConfig.direction === "asc" ? comparison : -comparison;
+  });
+  const normalizedUserFilter = userSearch.trim().toLowerCase();
+  const filteredUsers = users.filter((user) => {
+    if (!normalizedUserFilter) {
+      return true;
+    }
+    return [user.email, user.fullName, user.primaryRole, ...(user.roles ?? [])]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedUserFilter));
+  });
+  const normalizedRoleFilter = roleSearch.trim().toLowerCase();
+  const filteredRoles = roles.filter((role) => {
+    if (!normalizedRoleFilter) {
+      return true;
+    }
+    return [
+      role.name,
+      role.description,
+      role.projectScope,
+      role.reportScope,
+      role.uploadScope,
+      ...(role.allowedProjectRefs ?? []),
+      ...(role.allowedReportIds ?? []),
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedRoleFilter));
   });
 
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
@@ -1564,17 +1627,25 @@ function App() {
             {activeSettingsSection === "users" ? (
               canManageUsers ? (
                 <div className="settings-stack">
-                  <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
-                    <div className="settings-summary">
-                      <div className="stat-card compact-stat-card">
-                        <span>Total users</span>
-                        <strong>{users.length}</strong>
-                      </div>
-                      <div className="stat-card compact-stat-card">
-                        <span>Reset link lifetime</span>
-                        <strong>4 hours</strong>
-                      </div>
+                  <div className="settings-summary">
+                    <div className="stat-card compact-stat-card">
+                      <span>Total users</span>
+                      <strong>{users.length}</strong>
                     </div>
+                    <div className="stat-card compact-stat-card">
+                      <span>Reset link lifetime</span>
+                      <strong>4 hours</strong>
+                    </div>
+                  </div>
+
+                  <div className="settings-actions">
+                    <button type="button" onClick={startCreatingUser} disabled={isUserFormVisible && !editingUserId}>
+                      Create user
+                    </button>
+                  </div>
+
+                  {isUserFormVisible ? (
+                    <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="new-user-email">
@@ -1639,9 +1710,14 @@ function App() {
                         <button type="button" className="secondary-button" onClick={resetUserForm}>
                           Cancel edit
                         </button>
-                      ) : null}
+                      ) : (
+                        <button type="button" className="secondary-button" onClick={resetUserForm}>
+                          Cancel
+                        </button>
+                      )}
                     </div>
-                  </form>
+                    </form>
+                  ) : null}
 
                   {issuedResetLink ? (
                     <div className="detail-section-block">
@@ -1666,6 +1742,21 @@ function App() {
                   {isUsersLoading ? <div className="table-empty">Loading users...</div> : null}
 
                   {!isUsersLoading && users.length > 0 ? (
+                    <div className="filter-row">
+                      <label className="filter-label" htmlFor="user-filter">
+                        Filter users
+                      </label>
+                      <input
+                        id="user-filter"
+                        type="search"
+                        value={userSearch}
+                        onChange={(event) => setUserSearch(event.target.value)}
+                        placeholder="Email, name, or role"
+                      />
+                    </div>
+                  ) : null}
+
+                  {!isUsersLoading && filteredUsers.length > 0 ? (
                     <div className="table-wrap">
                       <table>
                         <thead>
@@ -1677,7 +1768,7 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {users.map((user) => (
+                          {filteredUsers.map((user) => (
                             <tr key={user.id}>
                               <td data-label="Email">{user.email}</td>
                               <td data-label="Name">{user.fullName || "N/A"}</td>
@@ -1706,6 +1797,9 @@ function App() {
                         </tbody>
                       </table>
                     </div>
+                  ) : null}
+                  {!isUsersLoading && users.length > 0 && filteredUsers.length === 0 ? (
+                    <div className="table-empty">No users match this filter.</div>
                   ) : null}
                 </div>
               ) : (
@@ -1784,17 +1878,25 @@ function App() {
             {activeSettingsSection === "roles" ? (
               canManageUsers ? (
                 <div className="settings-stack">
-                  <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate>
-                    <div className="settings-summary">
-                      <div className="stat-card compact-stat-card">
-                        <span>Available roles</span>
-                        <strong>{roles.length}</strong>
-                      </div>
-                      <div className="stat-card compact-stat-card">
-                        <span>Projects in data</span>
-                        <strong>{projectOptions.length}</strong>
-                      </div>
+                  <div className="settings-summary">
+                    <div className="stat-card compact-stat-card">
+                      <span>Available roles</span>
+                      <strong>{roles.length}</strong>
                     </div>
+                    <div className="stat-card compact-stat-card">
+                      <span>Projects in data</span>
+                      <strong>{projectOptions.length}</strong>
+                    </div>
+                  </div>
+
+                  <div className="settings-actions">
+                    <button type="button" onClick={startCreatingRole} disabled={isRoleFormVisible && !roleForm.id}>
+                      Create role
+                    </button>
+                  </div>
+
+                  {isRoleFormVisible ? (
+                    <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate>
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="role-name">
@@ -1916,14 +2018,30 @@ function App() {
                         {isSavingRole ? "Saving role..." : roleForm.id ? "Update role" : "Create role"}
                       </button>
                       <button type="button" className="secondary-button" onClick={resetRoleForm}>
-                        Clear form
+                        {roleForm.id ? "Cancel edit" : "Cancel"}
                       </button>
                     </div>
-                  </form>
+                    </form>
+                  ) : null}
 
                   {isRolesLoading ? <div className="table-empty">Loading roles...</div> : null}
 
                   {!isRolesLoading && roles.length > 0 ? (
+                    <div className="filter-row">
+                      <label className="filter-label" htmlFor="role-filter">
+                        Filter roles
+                      </label>
+                      <input
+                        id="role-filter"
+                        type="search"
+                        value={roleSearch}
+                        onChange={(event) => setRoleSearch(event.target.value)}
+                        placeholder="Role, description, or access"
+                      />
+                    </div>
+                  ) : null}
+
+                  {!isRolesLoading && filteredRoles.length > 0 ? (
                     <div className="table-wrap">
                       <table>
                         <thead>
@@ -1937,7 +2055,7 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {roles.map((role) => (
+                          {filteredRoles.map((role) => (
                             <tr key={role.id}>
                               <td data-label="Role">
                                 <strong>{role.name}</strong>
@@ -1975,6 +2093,9 @@ function App() {
                         </tbody>
                       </table>
                     </div>
+                  ) : null}
+                  {!isRolesLoading && roles.length > 0 && filteredRoles.length === 0 ? (
+                    <div className="table-empty">No roles match this filter.</div>
                   ) : null}
                 </div>
               ) : (
