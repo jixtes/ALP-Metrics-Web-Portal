@@ -583,6 +583,17 @@ select {
   margin-bottom: 16px;
 }
 
+.filter-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.filter-heading span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .filter-row input {
   width: 100%;
   min-height: 46px;

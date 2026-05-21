@@ -2502,9 +2502,12 @@ function App() {
                   </div>
 
                   <div className="filter-row">
-                    <label className="filter-label" htmlFor="survey-filter">
-                      Quick filter
-                    </label>
+                    <div className="filter-heading">
+                      <label className="filter-label" htmlFor="survey-filter">
+                        Quick filter
+                      </label>
+                      <span>{sortedSurveys.length} entries</span>
+                    </div>
                     <input
                       id="survey-filter"
                       type="text"
@@ -2580,9 +2583,12 @@ function App() {
                 </div>
 
                 <div className="filter-row">
-                  <label className="filter-label" htmlFor="upload-filter">
-                    Quick filter
-                  </label>
+                  <div className="filter-heading">
+                    <label className="filter-label" htmlFor="upload-filter">
+                      Quick filter
+                    </label>
+                    <span>{sortedUploads.length} entries</span>
+                  </div>
                   <input
                     id="upload-filter"
                     type="text"
