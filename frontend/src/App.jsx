@@ -300,7 +300,7 @@ function App() {
   const [csrfToken, setCsrfToken] = useState("");
   const [authUser, setAuthUser] = useState(null);
   const [credentials, setCredentials] = useState({
-    email: "",
+    email: new URLSearchParams(window.location.search).get("email") ?? "",
     password: "",
   });
   const [loginError, setLoginError] = useState("");
@@ -1254,7 +1254,13 @@ function App() {
       setResetForm({ password: "", confirmPassword: "" });
       setResetValidationError("");
       setResetTokenExpiresAt("");
-      window.setTimeout(() => navigateTo("/?passwordReset=success"), 1200);
+      window.setTimeout(() => {
+        const params = new URLSearchParams({ passwordReset: "success" });
+        if (resetEmail) {
+          params.set("email", resetEmail);
+        }
+        navigateTo(`/?${params.toString()}`);
+      }, 1200);
     } catch (submitError) {
       setResetFormError(submitError.message);
     } finally {
