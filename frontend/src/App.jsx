@@ -362,6 +362,7 @@ function App() {
     password: "",
   });
   const [issuedResetLink, setIssuedResetLink] = useState(null);
+  const [copiedResetLink, setCopiedResetLink] = useState(false);
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token") ?? "");
   const [resetValidationError, setResetValidationError] = useState("");
   const [resetTokenExpiresAt, setResetTokenExpiresAt] = useState("");
@@ -1173,6 +1174,7 @@ function App() {
     setIssuingResetUserId(user.id);
     setUsersError("");
     setUsersMessage("");
+    setCopiedResetLink(false);
 
     try {
       const data = await apiRequest(`/api/admin/users/${user.id}/reset-link`, {
@@ -1189,6 +1191,20 @@ function App() {
       setIssuedResetLink(null);
     } finally {
       setIssuingResetUserId(null);
+    }
+  }
+
+  async function handleCopyResetLink() {
+    if (!issuedResetLink?.resetUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(issuedResetLink.resetUrl);
+      setCopiedResetLink(true);
+      window.setTimeout(() => setCopiedResetLink(false), 1800);
+    } catch (copyError) {
+      setUsersError("Unable to copy the reset link.");
     }
   }
 
@@ -1743,6 +1759,13 @@ function App() {
                           </div>
                           <div className="preview-metadata">
                             <span>{issuedResetLink.resetUrl}</span>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={handleCopyResetLink}
+                            >
+                              {copiedResetLink ? "Copied" : "Copy"}
+                            </button>
                             <a className="sharepoint-link-button" href={issuedResetLink.resetUrl} target="_blank" rel="noreferrer">
                               Open reset link
                             </a>
