@@ -428,11 +428,14 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
 
 
 def _bootstrap_roles_and_admin(user_datastore: SQLAlchemyUserDatastore) -> None:
-    for role_name, description in [
+    default_roles = [
         ("admin", "Full access to ALP Metrics administration."),
         ("operator", "Can run the pipeline and review workspace data."),
         ("viewer", "Read-only access to workspace data."),
-    ]:
+    ]
+    roles_exist = Role.query.first() is not None
+    roles_to_ensure = default_roles if not roles_exist else default_roles[:1]
+    for role_name, description in roles_to_ensure:
         if not user_datastore.find_role(role_name):
             user_datastore.create_role(name=role_name, description=description)
 
