@@ -1632,10 +1632,10 @@ function App() {
                       <span>Total users</span>
                       <strong>{users.length}</strong>
                     </div>
-                    <div className="stat-card compact-stat-card">
-                      <span>Reset link lifetime</span>
-                      <strong>4 hours</strong>
-                    </div>
+                      <div className="stat-card compact-stat-card">
+                        <span>Reset link lifetime</span>
+                      <strong>{dashboard.settings?.resetLinkHours ?? 48} hours</strong>
+                      </div>
                   </div>
 
                   {!isUserFormVisible ? (

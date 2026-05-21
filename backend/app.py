@@ -52,6 +52,9 @@ def create_app() -> Flask:
     @auth_required("session")
     def dashboard():
         dashboard_data = fetch_dashboard(db_path)
+        dashboard_data["settings"] = {
+            "resetLinkHours": int(app.config["ALP_RESET_LINK_HOURS"]),
+        }
         project_scope, allowed_project_refs = current_user_project_access()
         if project_scope == "restricted":
             dashboard_data["surveys"] = [
