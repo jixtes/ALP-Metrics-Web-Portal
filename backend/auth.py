@@ -211,7 +211,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         reset_row = _lookup_active_reset_token(token)
         if not reset_row:
             return jsonify({"valid": False, "error": "This reset link is invalid or has expired."}), 400
-        return jsonify({"valid": True, "expiresAt": _to_iso(reset_row.expires_at)})
+        return jsonify({"valid": True, "email": reset_row.user.email, "expiresAt": _to_iso(reset_row.expires_at)})
 
     @app.post("/api/auth/reset-password")
     def reset_password():

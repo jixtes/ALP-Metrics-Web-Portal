@@ -366,6 +366,7 @@ function App() {
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.search).get("token") ?? "");
   const [resetValidationError, setResetValidationError] = useState("");
   const [resetTokenExpiresAt, setResetTokenExpiresAt] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
   const [resetForm, setResetForm] = useState({
     password: "",
     confirmPassword: "",
@@ -587,6 +588,7 @@ function App() {
     if (!token) {
       setResetValidationError("This reset link is missing a token.");
       setResetTokenExpiresAt("");
+      setResetEmail("");
       setIsResetValidating(false);
       return;
     }
@@ -595,9 +597,11 @@ function App() {
       const data = await apiRequest(`/api/auth/reset-password/validate?token=${encodeURIComponent(token)}`);
       setResetValidationError("");
       setResetTokenExpiresAt(data.expiresAt ?? "");
+      setResetEmail(data.email ?? "");
     } catch (validationError) {
       setResetValidationError(validationError.message);
       setResetTokenExpiresAt("");
+      setResetEmail("");
     } finally {
       setIsResetValidating(false);
     }
@@ -1403,6 +1407,7 @@ function App() {
 
           {isResetValidating ? <p className="run-note">Checking reset link...</p> : null}
           {resetValidationError && !isResetValidating ? <p className="login-error">{resetValidationError}</p> : null}
+          {resetEmail && !resetValidationError ? <p className="run-note">Resetting password for {resetEmail}.</p> : null}
           {resetTokenExpiresAt ? <p className="run-note">This link expires on {formatDate(resetTokenExpiresAt)}.</p> : null}
           {resetFormMessage ? <p className="run-note">{resetFormMessage}</p> : null}
 
