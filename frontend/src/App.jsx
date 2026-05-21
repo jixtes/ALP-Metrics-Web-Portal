@@ -380,6 +380,7 @@ function App() {
   const [resetFormMessage, setResetFormMessage] = useState("");
   const [isResetValidating, setIsResetValidating] = useState(false);
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
+  const [isResetComplete, setIsResetComplete] = useState(false);
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
   const isAuthenticated = Boolean(authUser);
@@ -465,8 +466,13 @@ function App() {
 
   function navigateTo(path) {
     window.history.replaceState({}, "", path);
+    const params = new URLSearchParams(window.location.search);
     setRoutePath(window.location.pathname);
-    setResetToken(new URLSearchParams(window.location.search).get("token") ?? "");
+    setResetToken(params.get("token") ?? "");
+    if (params.get("passwordReset") === "success") {
+      setLoginMessage("Now login with your new password.");
+      setCredentials((current) => ({ ...current, email: params.get("email") ?? "", password: "" }));
+    }
   }
 
   async function loadDashboard(preferredSurveyId = null) {
@@ -1254,6 +1260,7 @@ function App() {
       setResetForm({ password: "", confirmPassword: "" });
       setResetValidationError("");
       setResetTokenExpiresAt("");
+      setIsResetComplete(true);
       window.setTimeout(() => {
         const params = new URLSearchParams({ passwordReset: "success" });
         if (resetEmail) {
@@ -1424,7 +1431,7 @@ function App() {
           {resetTokenExpiresAt ? <p className="run-note">This link expires on {formatDate(resetTokenExpiresAt)}.</p> : null}
           {resetFormMessage ? <p className="run-note">{resetFormMessage}</p> : null}
 
-          {!resetValidationError && !isResetValidating ? (
+          {!resetValidationError && !isResetValidating && !isResetComplete ? (
             <form className="login-form" onSubmit={handleResetPasswordSubmit} noValidate>
               <label htmlFor="new-password">New password</label>
               <input
