@@ -2503,9 +2503,6 @@ function App() {
 
                   <div className="filter-row">
                     <div className="filter-heading">
-                      <label className="filter-label" htmlFor="survey-filter">
-                        Quick filter
-                      </label>
                       <span>{sortedSurveys.length} entries</span>
                     </div>
                     <input
@@ -2513,6 +2510,8 @@ function App() {
                       type="text"
                       value={surveyFilter}
                       onChange={(event) => setSurveyFilter(event.target.value)}
+                      placeholder="Filter surveys"
+                      aria-label="Filter surveys"
                     />
                   </div>
 
@@ -2584,9 +2583,6 @@ function App() {
 
                 <div className="filter-row">
                   <div className="filter-heading">
-                    <label className="filter-label" htmlFor="upload-filter">
-                      Quick filter
-                    </label>
                     <span>{sortedUploads.length} entries</span>
                   </div>
                   <input
@@ -2594,6 +2590,8 @@ function App() {
                     type="text"
                     value={uploadFilter}
                     onChange={(event) => setUploadFilter(event.target.value)}
+                    placeholder="Filter files"
+                    aria-label="Filter files"
                   />
                 </div>
 
