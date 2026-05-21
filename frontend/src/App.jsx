@@ -1165,6 +1165,7 @@ function App() {
       setResetForm({ password: "", confirmPassword: "" });
       setResetValidationError("");
       setResetTokenExpiresAt("");
+      window.setTimeout(() => navigateTo("/"), 1200);
     } catch (submitError) {
       setResetFormError(submitError.message);
     } finally {
