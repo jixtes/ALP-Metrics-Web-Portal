@@ -329,6 +329,7 @@ function App() {
   const [embeddedReports, setEmbeddedReports] = useState([]);
   const [isPowerBILoading, setIsPowerBILoading] = useState(false);
   const [isSavingPowerBI, setIsSavingPowerBI] = useState(false);
+  const [refreshingPowerBIDatasetId, setRefreshingPowerBIDatasetId] = useState("");
   const [powerBIError, setPowerBIError] = useState("");
   const [powerBIMessage, setPowerBIMessage] = useState("");
   const [profileError, setProfileError] = useState("");
@@ -862,6 +863,30 @@ function App() {
       setPowerBIError(saveError.message);
     } finally {
       setIsSavingPowerBI(false);
+    }
+  }
+
+  async function handleRefreshPowerBIReport(report) {
+    const datasetId = report.datasetId;
+    if (!datasetId) {
+      setPowerBIError("This report does not expose a semantic model ID.");
+      return;
+    }
+
+    setRefreshingPowerBIDatasetId(datasetId);
+    setPowerBIError("");
+    setPowerBIMessage("");
+
+    try {
+      const data = await apiRequest("/api/powerbi/refresh", {
+        method: "POST",
+        body: { datasetId },
+      });
+      setPowerBIMessage(data.message || "Power BI semantic model refresh started.");
+    } catch (refreshError) {
+      setPowerBIError(refreshError.message);
+    } finally {
+      setRefreshingPowerBIDatasetId("");
     }
   }
 
@@ -2231,6 +2256,17 @@ function App() {
                               {report.isEffectiveIdentityRequired ? (
                                 <small>Requires effective identity (RLS) for embedding.</small>
                               ) : null}
+                              <button
+                                type="button"
+                                className="secondary-button secondary-button-compact"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  handleRefreshPowerBIReport(report);
+                                }}
+                                disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId}
+                              >
+                                {refreshingPowerBIDatasetId === report.datasetId ? "Refreshing..." : "Refresh report"}
+                              </button>
                             </div>
                           </label>
                         );

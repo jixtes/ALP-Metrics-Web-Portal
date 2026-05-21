@@ -210,6 +210,29 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    @app.post("/api/powerbi/refresh")
+    @auth_required("session")
+    @roles_required("admin")
+    def refresh_powerbi_dataset():
+        payload = request.get_json(silent=True) or {}
+        dataset_id = str(payload.get("datasetId", "")).strip() or None
+
+        try:
+            config = PowerBIConfig.from_env()
+            client = PowerBIClient(config)
+            if not dataset_id:
+                selections = fetch_powerbi_report_selections(db_path)
+                dataset_ids = [selection["dataset_id"] for selection in selections if selection.get("dataset_id")]
+                unique_dataset_ids = sorted(set(dataset_ids))
+                if len(unique_dataset_ids) == 1:
+                    dataset_id = unique_dataset_ids[0]
+                elif len(unique_dataset_ids) > 1:
+                    return jsonify({"error": "Select one report to refresh because multiple semantic models are shown."}), 400
+            result = client.refresh_dataset(dataset_id=dataset_id)
+            return jsonify({"message": "Power BI semantic model refresh started.", **result}), 202
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.get("/api/powerbi/embed-configs")
     @auth_required("session")
     def powerbi_embed_configs():

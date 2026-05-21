@@ -100,6 +100,32 @@ class PowerBIClient:
             raise ValueError("workspace_id is required for get_dataset().")
         return self._request("GET", f"/groups/{target_workspace_id}/datasets/{dataset_id}").json()
 
+    def refresh_dataset(self, dataset_id: str | None = None, workspace_id: str | None = None) -> dict[str, Any]:
+        target_workspace_id = workspace_id or self.config.workspace_id
+        target_dataset_id = dataset_id or self.config.dataset_id
+        missing = [
+            name
+            for name, value in (
+                ("workspace_id", target_workspace_id),
+                ("dataset_id", target_dataset_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"Missing values for dataset refresh: {', '.join(missing)}")
+
+        response = self._request(
+            "POST",
+            f"/groups/{target_workspace_id}/datasets/{target_dataset_id}/refreshes",
+            json={},
+        )
+        return {
+            "datasetId": target_dataset_id,
+            "statusCode": response.status_code,
+            "refreshUrl": response.headers.get("Location"),
+            "requestId": response.headers.get("RequestId") or response.headers.get("x-ms-request-id"),
+        }
+
     def generate_embed_token(
         self,
         *,
