@@ -1326,7 +1326,7 @@ function App() {
             {resetFormError ? <p className="login-error">{resetFormError}</p> : null}
           </form>
 
-          <button type="button" className="secondary-button" onClick={() => navigateTo("/")}>
+          <button type="button" className="secondary-button login-secondary-button" onClick={() => navigateTo("/")}>
             Back to sign in
           </button>
         </section>

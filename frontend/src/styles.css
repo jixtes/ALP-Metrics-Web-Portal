@@ -305,6 +305,17 @@ select {
   color: var(--accent) !important;
 }
 
+.login-secondary-button {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .section-heading .secondary-button {
   width: auto;
   min-width: 170px;
