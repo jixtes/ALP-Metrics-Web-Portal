@@ -305,7 +305,7 @@ function App() {
   });
   const [uploadSortConfig, setUploadSortConfig] = useState({
     key: "file_name",
-    direction: "desc",
+    direction: "asc",
   });
   const [csrfToken, setCsrfToken] = useState("");
   const [authUser, setAuthUser] = useState(null);
