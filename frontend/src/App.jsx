@@ -1388,7 +1388,6 @@ function App() {
         <section className="login-card">
           <p className="eyebrow">Password reset</p>
           <h1>Set a new password</h1>
-          <p className="hero-text">Use the admin-issued reset link to choose a fresh password.</p>
 
           {isResetValidating ? <p className="run-note">Checking reset link...</p> : null}
           {resetValidationError && !isResetValidating ? <p className="login-error">{resetValidationError}</p> : null}
