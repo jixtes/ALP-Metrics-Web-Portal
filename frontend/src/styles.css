@@ -579,6 +579,8 @@ select {
 
 .filter-row {
   display: grid;
+  grid-template-columns: minmax(180px, max-content) minmax(240px, 1fr);
+  align-items: center;
   gap: 8px;
   margin-bottom: 16px;
 }
@@ -590,8 +592,9 @@ select {
 }
 
 .filter-heading span {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--accent);
+  font-size: 0.96rem;
+  font-weight: 800;
 }
 
 .filter-row input {
@@ -1225,6 +1228,10 @@ tbody tr:hover,
 
   .hero-action-button {
     width: 100%;
+  }
+
+  .filter-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -2503,7 +2503,7 @@ function App() {
 
                   <div className="filter-row">
                     <div className="filter-heading">
-                      <span>{sortedSurveys.length} entries</span>
+                      <span>Number of surveys: {sortedSurveys.length}</span>
                     </div>
                     <input
                       id="survey-filter"
@@ -2583,7 +2583,7 @@ function App() {
 
                 <div className="filter-row">
                   <div className="filter-heading">
-                    <span>{sortedUploads.length} entries</span>
+                    <span>Number of files: {sortedUploads.length}</span>
                   </div>
                   <input
                     id="upload-filter"
