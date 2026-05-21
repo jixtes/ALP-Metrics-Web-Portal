@@ -90,7 +90,17 @@ function compareSurveyValues(left, right, type) {
 
 function getSharePointFolder(item) {
   const rawPath = item.sharepoint_path || item.local_path || "";
-  const normalizedPath = String(rawPath).replaceAll("\\", "/");
+  let normalizedPath = String(rawPath).replaceAll("\\", "/");
+  const graphRootMarker = "root:/";
+  const graphRootIndex = normalizedPath.toLowerCase().indexOf(graphRootMarker);
+  if (graphRootIndex >= 0) {
+    normalizedPath = normalizedPath.slice(graphRootIndex + graphRootMarker.length);
+  }
+  const alpMetricsMarker = "ALP Metrics/";
+  const alpMetricsIndex = normalizedPath.toLowerCase().indexOf(alpMetricsMarker.toLowerCase());
+  if (alpMetricsIndex >= 0) {
+    normalizedPath = normalizedPath.slice(alpMetricsIndex + alpMetricsMarker.length);
+  }
   const rootMarker = "alp-metrics-pipeline/";
   const rootIndex = normalizedPath.toLowerCase().indexOf(rootMarker);
   const relativePath =
