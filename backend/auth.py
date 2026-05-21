@@ -318,7 +318,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             return jsonify({"error": "Role not found."}), 404
         if role.name == "admin":
             return jsonify({"error": "The admin role cannot be deleted."}), 400
-        if role.users:
+        if _role_user_count(role) > 0:
             return jsonify({"error": "Reassign users before deleting this role."}), 400
 
         db.session.delete(role)
@@ -483,7 +483,6 @@ def _serialize_user(user: User | None) -> dict | None:
 
 
 def _serialize_role(role: Role) -> dict:
-    user_count = role.users.count() if hasattr(role.users, "count") else len(role.users)
     return {
         "id": role.id,
         "name": role.name,
@@ -494,8 +493,12 @@ def _serialize_role(role: Role) -> dict:
         "allowedProjectRefs": _load_json_list(role.allowed_project_refs_json),
         "allowedReportIds": _load_json_list(role.allowed_report_ids_json),
         "isSystem": role.name == "admin",
-        "userCount": user_count,
+        "userCount": _role_user_count(role),
     }
+
+
+def _role_user_count(role: Role) -> int:
+    return role.users.count() if hasattr(role.users, "count") else len(role.users)
 
 
 def _require_csrf() -> None:
