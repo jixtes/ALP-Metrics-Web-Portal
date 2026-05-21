@@ -595,7 +595,8 @@ def _lookup_active_reset_token(plaintext_token: str) -> PasswordResetToken | Non
         return None
 
     now = _utcnow()
-    if reset_row.used_at or reset_row.revoked_at or reset_row.expires_at < now:
+    expires_at = _as_utc(reset_row.expires_at)
+    if reset_row.used_at or reset_row.revoked_at or expires_at < now:
         return None
     if not reset_row.user.active:
         return None
@@ -632,4 +633,10 @@ def _utcnow() -> datetime:
 def _to_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
-    return value.astimezone(timezone.utc).isoformat()
+    return _as_utc(value).isoformat()
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
