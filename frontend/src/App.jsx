@@ -371,6 +371,7 @@ function App() {
   });
   const [resetFormError, setResetFormError] = useState("");
   const [resetFormMessage, setResetFormMessage] = useState("");
+  const [isResetValidating, setIsResetValidating] = useState(false);
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
@@ -581,9 +582,11 @@ function App() {
   }
 
   async function validateResetLink(token) {
+    setIsResetValidating(true);
     if (!token) {
       setResetValidationError("This reset link is missing a token.");
       setResetTokenExpiresAt("");
+      setIsResetValidating(false);
       return;
     }
 
@@ -594,6 +597,8 @@ function App() {
     } catch (validationError) {
       setResetValidationError(validationError.message);
       setResetTokenExpiresAt("");
+    } finally {
+      setIsResetValidating(false);
     }
   }
 
@@ -1369,34 +1374,37 @@ function App() {
           <h1>Set a new password</h1>
           <p className="hero-text">Use the admin-issued reset link to choose a fresh password.</p>
 
-          {resetValidationError ? <p className="login-error">{resetValidationError}</p> : null}
+          {isResetValidating ? <p className="run-note">Checking reset link...</p> : null}
+          {resetValidationError && !isResetValidating ? <p className="login-error">{resetValidationError}</p> : null}
           {resetTokenExpiresAt ? <p className="run-note">This link expires on {formatDate(resetTokenExpiresAt)}.</p> : null}
           {resetFormMessage ? <p className="run-note">{resetFormMessage}</p> : null}
 
-          <form className="login-form" onSubmit={handleResetPasswordSubmit} noValidate>
-            <label htmlFor="new-password">New password</label>
-            <input
-              id="new-password"
-              type="password"
-              value={resetForm.password}
-              onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
-              autoComplete="new-password"
-            />
+          {!resetValidationError && !isResetValidating ? (
+            <form className="login-form" onSubmit={handleResetPasswordSubmit} noValidate>
+              <label htmlFor="new-password">New password</label>
+              <input
+                id="new-password"
+                type="password"
+                value={resetForm.password}
+                onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
+                autoComplete="new-password"
+              />
 
-            <label htmlFor="confirm-password">Confirm password</label>
-            <input
-              id="confirm-password"
-              type="password"
-              value={resetForm.confirmPassword}
-              onChange={(event) => setResetForm((current) => ({ ...current, confirmPassword: event.target.value }))}
-              autoComplete="new-password"
-            />
+              <label htmlFor="confirm-password">Confirm password</label>
+              <input
+                id="confirm-password"
+                type="password"
+                value={resetForm.confirmPassword}
+                onChange={(event) => setResetForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                autoComplete="new-password"
+              />
 
-            <button type="submit" disabled={Boolean(resetValidationError) || isResetSubmitting}>
-              {isResetSubmitting ? "Updating password..." : "Update password"}
-            </button>
-            {resetFormError ? <p className="login-error">{resetFormError}</p> : null}
-          </form>
+              <button type="submit" disabled={isResetSubmitting}>
+                {isResetSubmitting ? "Updating password..." : "Update password"}
+              </button>
+              {resetFormError ? <p className="login-error">{resetFormError}</p> : null}
+            </form>
+          ) : null}
 
           <button type="button" className="secondary-button login-secondary-button" onClick={() => navigateTo("/")}>
             Back to sign in
@@ -1735,6 +1743,9 @@ function App() {
                           </div>
                           <div className="preview-metadata">
                             <span>{issuedResetLink.resetUrl}</span>
+                            <a className="sharepoint-link-button" href={issuedResetLink.resetUrl} target="_blank" rel="noreferrer">
+                              Open reset link
+                            </a>
                           </div>
                         </div>
                       </div>
