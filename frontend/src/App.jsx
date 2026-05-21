@@ -883,6 +883,7 @@ function App() {
         body: { datasetId },
       });
       setPowerBIMessage(data.message || "Power BI semantic model refresh started.");
+      await loadPowerBIAdminState();
     } catch (refreshError) {
       setPowerBIError(refreshError.message);
     } finally {
@@ -2253,14 +2254,23 @@ function App() {
                               <strong>{report.name || "Untitled report"}</strong>
                               <span>{report.id}</span>
                               <small>{report.datasetId || "No dataset ID"}</small>
+                              {report.latestRefresh ? (
+                                <small>
+                                  Last refresh: {formatDate(report.latestRefresh.endTime || report.latestRefresh.startTime)} (
+                                  {report.latestRefresh.status || "status unavailable"})
+                                </small>
+                              ) : (
+                                <small>Last refresh: unavailable</small>
+                              )}
                               {report.isEffectiveIdentityRequired ? (
                                 <small>Requires effective identity (RLS) for embedding.</small>
                               ) : null}
                               <button
                                 type="button"
-                                className="secondary-button secondary-button-compact"
+                                className="powerbi-refresh-button"
                                 onClick={(event) => {
                                   event.preventDefault();
+                                  event.stopPropagation();
                                   handleRefreshPowerBIReport(report);
                                 }}
                                 disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId}

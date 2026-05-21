@@ -132,6 +132,7 @@ def create_app() -> Flask:
             client = PowerBIClient(config)
             reports = client.list_reports()
             dataset_cache: dict[str, dict] = {}
+            refresh_cache: dict[str, dict | None] = {}
 
             def dataset_metadata(dataset_id: str | None) -> dict:
                 if not dataset_id:
@@ -142,6 +143,17 @@ def create_app() -> Flask:
                     except Exception:
                         dataset_cache[dataset_id] = {}
                 return dataset_cache[dataset_id]
+
+            def latest_refresh(dataset_id: str | None) -> dict | None:
+                if not dataset_id:
+                    return None
+                if dataset_id not in refresh_cache:
+                    try:
+                        history = client.get_refresh_history(dataset_id, top=1)
+                        refresh_cache[dataset_id] = history[0] if history else None
+                    except Exception:
+                        refresh_cache[dataset_id] = None
+                return refresh_cache[dataset_id]
 
             return jsonify(
                 {
@@ -158,6 +170,7 @@ def create_app() -> Flask:
                             "isEffectiveIdentityRolesRequired": dataset_metadata(report.get("datasetId")).get(
                                 "isEffectiveIdentityRolesRequired", False
                             ),
+                            "latestRefresh": latest_refresh(report.get("datasetId")),
                         }
                         for report in reports
                     ]

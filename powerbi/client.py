@@ -126,6 +126,32 @@ class PowerBIClient:
             "requestId": response.headers.get("RequestId") or response.headers.get("x-ms-request-id"),
         }
 
+    def get_refresh_history(
+        self,
+        dataset_id: str | None = None,
+        workspace_id: str | None = None,
+        *,
+        top: int = 1,
+    ) -> list[dict[str, Any]]:
+        target_workspace_id = workspace_id or self.config.workspace_id
+        target_dataset_id = dataset_id or self.config.dataset_id
+        missing = [
+            name
+            for name, value in (
+                ("workspace_id", target_workspace_id),
+                ("dataset_id", target_dataset_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"Missing values for refresh history: {', '.join(missing)}")
+
+        payload = self._request(
+            "GET",
+            f"/groups/{target_workspace_id}/datasets/{target_dataset_id}/refreshes?$top={top}",
+        ).json()
+        return payload.get("value", [])
+
     def generate_embed_token(
         self,
         *,

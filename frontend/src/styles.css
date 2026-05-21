@@ -1078,6 +1078,29 @@ tbody tr:hover,
   background: rgba(24, 60, 54, 0.08);
 }
 
+.powerbi-refresh-button {
+  width: fit-content;
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 0 14px;
+  border: 1px solid rgba(24, 60, 54, 0.18);
+  border-radius: 999px;
+  background: rgba(24, 60, 54, 0.1);
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.powerbi-refresh-button:hover {
+  background: rgba(24, 60, 54, 0.16);
+}
+
+.powerbi-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
