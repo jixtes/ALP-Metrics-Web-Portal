@@ -722,6 +722,14 @@ function App() {
     }
   }
 
+  function handleLoginKeyDown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.requestSubmit();
+  }
+
   async function handleLogout() {
     try {
       const data = await apiRequest("/api/auth/logout", { method: "POST" });
@@ -1344,7 +1352,7 @@ function App() {
             ALP Metrics <span>Portal</span>
           </h1>
 
-          <form className="login-form" onSubmit={handleLoginSubmit} noValidate>
+          <form className="login-form" onSubmit={handleLoginSubmit} onKeyDown={handleLoginKeyDown} noValidate>
             <label htmlFor="email">Email</label>
             <input
               id="email"
