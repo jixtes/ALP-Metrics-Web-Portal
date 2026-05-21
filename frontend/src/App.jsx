@@ -1638,11 +1638,13 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="settings-actions">
-                    <button type="button" onClick={startCreatingUser} disabled={isUserFormVisible && !editingUserId}>
-                      Create user
-                    </button>
-                  </div>
+                  {!isUserFormVisible ? (
+                    <div className="settings-actions">
+                      <button type="button" onClick={startCreatingUser}>
+                        Create user
+                      </button>
+                    </div>
+                  ) : null}
 
                   {isUserFormVisible ? (
                     <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
@@ -1889,11 +1891,13 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="settings-actions">
-                    <button type="button" onClick={startCreatingRole} disabled={isRoleFormVisible && !roleForm.id}>
-                      Create role
-                    </button>
-                  </div>
+                  {!isRoleFormVisible ? (
+                    <div className="settings-actions">
+                      <button type="button" onClick={startCreatingRole}>
+                        Create role
+                      </button>
+                    </div>
+                  ) : null}
 
                   {isRoleFormVisible ? (
                     <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate>
