@@ -1346,6 +1346,7 @@ function App() {
   });
 
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
+  const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => survey.project_ref).filter(Boolean)).size;
   const totalSubmissions = dashboard.surveys.reduce((sum, survey) => sum + survey.submission_count, 0);
   const lastSubmissionAt = dashboard.surveys.reduce((latest, survey) => {
     const candidate = survey.last_submission_at;
@@ -2309,7 +2310,7 @@ function App() {
       <section className="stats-grid">
         <article className="stat-card">
           <span>Projects</span>
-          <strong>{dashboard.surveys.length}</strong>
+          <strong>{uniqueProjectCount}</strong>
         </article>
         <article className="stat-card">
           <span>Assessments completed</span>
