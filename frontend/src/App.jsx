@@ -299,6 +299,7 @@ function App() {
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
   const [uploadFilter, setUploadFilter] = useState("");
+  const [uploadFolderFilter, setUploadFolderFilter] = useState("");
   const [sortConfig, setSortConfig] = useState({
     key: "last_submission_at",
     direction: "desc",
@@ -1312,14 +1313,18 @@ function App() {
     ...item,
     folder: getSharePointFolder(item),
   }));
+  const uploadFolderOptions = [...new Set(uploadsWithFolders.map((item) => item.folder).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
   const filteredUploads = uploadsWithFolders.filter((item) => {
-    if (!normalizedUploadFilter) {
-      return true;
-    }
+    const matchesFolder = !uploadFolderFilter || item.folder === uploadFolderFilter;
+    const matchesText =
+      !normalizedUploadFilter ||
+      [item.file_name, item.folder, item.local_path, item.sharepoint_path, item.status, item.web_url]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedUploadFilter));
 
-    return [item.file_name, item.folder, item.local_path, item.sharepoint_path, item.status, item.web_url]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(normalizedUploadFilter));
+    return matchesFolder && matchesText;
   });
   const sortedUploads = [...filteredUploads].sort((left, right) => {
     const column = uploadColumns.find((item) => item.key === uploadSortConfig.key) ?? uploadColumns[0];
@@ -2603,6 +2608,19 @@ function App() {
                     placeholder="Filter files"
                     aria-label="Filter files"
                   />
+                  <select
+                    id="upload-folder-filter"
+                    value={uploadFolderFilter}
+                    onChange={(event) => setUploadFolderFilter(event.target.value)}
+                    aria-label="Filter by folder"
+                  >
+                    <option value="">All folders</option>
+                    {uploadFolderOptions.map((folder) => (
+                      <option key={folder} value={folder}>
+                        {folder}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {dashboard.uploads.length === 0 ? (

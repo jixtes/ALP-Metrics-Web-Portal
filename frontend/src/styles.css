@@ -579,10 +579,14 @@ select {
 
 .filter-row {
   display: grid;
-  grid-template-columns: minmax(180px, max-content) minmax(240px, 1fr);
+  grid-template-columns: minmax(180px, max-content) minmax(220px, 1fr) minmax(180px, 280px);
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.filter-row input:last-child {
+  grid-column: 2 / -1;
 }
 
 .filter-heading {
