@@ -812,6 +812,7 @@ tbody tr:hover,
 }
 
 .detail-section-heading {
+  position: relative;
   margin-bottom: 12px;
 }
 
@@ -823,6 +824,20 @@ tbody tr:hover,
 .detail-section-heading p {
   margin: 0;
   color: var(--muted);
+}
+
+.scroll-hint {
+  display: inline-flex;
+  margin-top: 8px;
+  min-height: 26px;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(24, 60, 54, 0.1);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 .module-strip {
@@ -931,8 +946,11 @@ tbody tr:hover,
 }
 
 .aggregate-table-wrap-scroll {
+  position: relative;
   max-height: 360px;
   overflow: auto;
+  border: 1px solid rgba(19, 33, 32, 0.1);
+  box-shadow: inset 0 -18px 22px -26px rgba(19, 33, 32, 0.55);
 }
 
 .aggregate-table {

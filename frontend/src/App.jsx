@@ -2510,6 +2510,7 @@ function App() {
                       <div className="detail-section-heading">
                         <h3>Records per day</h3>
                         <p>Daily entity type and enumerator contributions for recent active days.</p>
+                        {dailySubmissionRows.length > 5 ? <span className="scroll-hint">Scroll for more</span> : null}
                       </div>
 
                       {dailySubmissionRows.length > 0 ? (
