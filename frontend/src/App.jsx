@@ -2513,7 +2513,7 @@ function App() {
                       </div>
 
                       {dailySubmissionRows.length > 0 ? (
-                        <div className="table-wrap aggregate-table-wrap">
+                        <div className="table-wrap aggregate-table-wrap aggregate-table-wrap-scroll">
                           <table className="aggregate-table">
                             <thead>
                               <tr>

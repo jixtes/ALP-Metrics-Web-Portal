@@ -435,8 +435,6 @@ select {
 
 .survey-split-column-preview {
   border-right: 1px solid rgba(19, 33, 32, 0.08);
-  max-height: 900px;
-  overflow: auto;
 }
 
 .survey-split-column-preview-enter {
@@ -930,6 +928,11 @@ tbody tr:hover,
 .aggregate-table-wrap {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.55);
+}
+
+.aggregate-table-wrap-scroll {
+  max-height: 360px;
+  overflow: auto;
 }
 
 .aggregate-table {
