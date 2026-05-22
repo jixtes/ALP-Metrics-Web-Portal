@@ -976,12 +976,12 @@ tbody tr:hover,
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  align-items: start;
   gap: 20px;
 }
 
-.settings-sidebar,
-.settings-content {
-  min-height: 100%;
+.settings-sidebar {
+  align-self: start;
 }
 
 .settings-nav {
