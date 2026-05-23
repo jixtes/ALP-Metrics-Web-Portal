@@ -74,6 +74,13 @@ function formatList(items) {
   return items.length > 0 ? items.join(", ") : "N/A";
 }
 
+function formatUploadScope(scope) {
+  if (scope === "project_files") {
+    return "Project files";
+  }
+  return scope === "all" ? "Visible" : "Hidden";
+}
+
 function compareSurveyValues(left, right, type) {
   if (type === "date") {
     const leftTime = left ? new Date(left).getTime() : Number.NEGATIVE_INFINITY;
@@ -401,7 +408,7 @@ function App() {
   const canManagePowerBI = userRoles.includes("admin");
   const canManagePipeline = userRoles.includes("admin");
   const canRunPipeline = isAuthenticated;
-  const canSeeUploads = canManageUsers || (authUser?.uploadScope ?? "all") === "all";
+  const canSeeUploads = canManageUsers || (authUser?.uploadScope ?? "all") !== "none";
   const visibleSettingsSections = settingsSections.filter((section) => {
     if (section.key === "profile") {
       return true;
@@ -2123,6 +2130,7 @@ function App() {
                         onChange={(event) => handleRoleFieldChange("uploadScope", event.target.value)}
                       >
                         <option value="all">Can see uploads</option>
+                        <option value="project_files">Project files only</option>
                         <option value="none">Hide uploads</option>
                       </select>
                     </div>
@@ -2180,7 +2188,7 @@ function App() {
                               <td data-label="Dashboards">
                                 {role.reportScope === "all" ? "All" : `${role.allowedReportIds.length} selected`}
                               </td>
-                              <td data-label="Uploads">{role.uploadScope === "all" ? "Visible" : "Hidden"}</td>
+                              <td data-label="Uploads">{formatUploadScope(role.uploadScope)}</td>
                               <td data-label="Users">{role.userCount}</td>
                               <td data-label="Action">
                                 <div className="settings-actions">

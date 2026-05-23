@@ -537,8 +537,8 @@ def _apply_role_access_payload(role: Role, payload: dict) -> None:
     if report_scope not in {"all", "restricted"}:
         raise ValueError("reportScope must be 'all' or 'restricted'.")
     upload_scope = str(payload.get("uploadScope", role.upload_scope or "all")).strip().lower() or "all"
-    if upload_scope not in {"all", "none"}:
-        raise ValueError("uploadScope must be 'all' or 'none'.")
+    if upload_scope not in {"all", "project_files", "none"}:
+        raise ValueError("uploadScope must be 'all', 'project_files', or 'none'.")
 
     role.project_scope = project_scope
     role.report_scope = report_scope
@@ -585,11 +585,11 @@ def current_user_report_access() -> tuple[str, set[str]]:
     return role.report_scope or "all", set(_load_json_list(role.allowed_report_ids_json))
 
 
-def current_user_upload_access() -> bool:
+def current_user_upload_access() -> str:
     role = _primary_role(current_user if current_user.is_authenticated else None)
     if not role or role.name == "admin":
-        return True
-    return (role.upload_scope or "all") == "all"
+        return "all"
+    return role.upload_scope or "all"
 
 
 def _lookup_active_reset_token(plaintext_token: str) -> PasswordResetToken | None:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+import re
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_security import auth_required, current_user, roles_required
@@ -60,8 +61,16 @@ def create_app() -> Flask:
             dashboard_data["surveys"] = [
                 survey for survey in dashboard_data["surveys"] if (survey.get("project_ref") or "") in allowed_project_refs
             ]
-        if not current_user_upload_access():
+        upload_scope = current_user_upload_access()
+        if upload_scope == "none":
             dashboard_data["uploads"] = []
+        elif upload_scope == "project_files":
+            dashboard_data["uploads"] = _filter_project_file_uploads(
+                dashboard_data["uploads"],
+                dashboard_data["surveys"],
+                project_scope,
+                allowed_project_refs,
+            )
         latest_run = dashboard_data.get("latest_run")
         if latest_run and latest_run.get("pipeline_commit_after"):
             latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after")))
@@ -306,3 +315,63 @@ def create_app() -> Flask:
         return jsonify({"message": "Frontend build not found. Run the React app in frontend/."})
 
     return app
+
+
+PROJECT_DATA_UPLOAD_FOLDER = "pipeline/project_data"
+PROJECT_FILE_SUFFIXES = (
+    "_final_data_with_labels.csv",
+    "_final_data.csv",
+    ".csv",
+)
+
+
+def _filter_project_file_uploads(
+    uploads: list[dict],
+    surveys: list[dict],
+    project_scope: str,
+    allowed_project_refs: set[str],
+) -> list[dict]:
+    allowed_survey_names = {
+        str(survey.get("survey_name") or "")
+        for survey in surveys
+        if project_scope != "restricted" or (survey.get("project_ref") or "") in allowed_project_refs
+    }
+    allowed_project_file_slugs = {_slugify_project_file_name(name) for name in allowed_survey_names if name}
+    if not allowed_project_file_slugs:
+        return []
+
+    return [
+        upload
+        for upload in uploads
+        if _is_project_data_upload(upload)
+        and _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
+    ]
+
+
+def _is_project_data_upload(upload: dict) -> bool:
+    return _upload_relative_path(upload).lower().startswith(f"{PROJECT_DATA_UPLOAD_FOLDER}/")
+
+
+def _project_file_slug(file_name: str) -> str:
+    normalized_name = str(file_name).replace("\\", "/").rsplit("/", 1)[-1]
+    lower_name = normalized_name.lower()
+    for suffix in PROJECT_FILE_SUFFIXES:
+        if lower_name.endswith(suffix):
+            normalized_name = normalized_name[: -len(suffix)]
+            break
+    return _slugify_project_file_name(normalized_name)
+
+
+def _slugify_project_file_name(value: str) -> str:
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", value.lower())).strip("_")
+
+
+def _upload_relative_path(upload: dict) -> str:
+    raw_path = str(upload.get("sharepoint_path") or upload.get("local_path") or "").replace("\\", "/")
+    lower_path = raw_path.lower()
+    for marker in ("root:/", "alp-metrics-pipeline/", "/files/"):
+        marker_index = lower_path.find(marker)
+        if marker_index >= 0:
+            raw_path = raw_path[marker_index + len(marker) :]
+            lower_path = raw_path.lower()
+    return raw_path.strip("/")
