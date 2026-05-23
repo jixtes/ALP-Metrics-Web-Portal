@@ -80,9 +80,17 @@ select {
 
 .login-card h1 span,
 .hero-copy h1 span {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.12em;
+  padding: 0.13em 0.34em 0.16em;
+  border-radius: 0.22em;
+  background: var(--accent-soft);
+  color: #fff;
   font-size: 0.58em;
   font-weight: 700;
-  color: var(--accent-soft);
+  line-height: 1;
+  vertical-align: 0.1em;
 }
 
 .login-form {
@@ -247,7 +255,7 @@ select {
 .hero-copy h1 {
   margin: 0;
   max-width: 18ch;
-  font-size: clamp(1.85rem, 4.4vw, 3rem);
+  font-size: clamp(1.65rem, 4.2vw, 2.55rem);
   line-height: 1;
 }
 
