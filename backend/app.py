@@ -352,7 +352,8 @@ def _filter_project_file_uploads(
 
 
 def _is_project_data_upload(upload: dict) -> bool:
-    return _upload_relative_path(upload).lower().startswith(f"{PROJECT_DATA_UPLOAD_FOLDER}/")
+    relative_path = f"/{_upload_relative_path(upload).lower().strip('/')}/"
+    return f"/{PROJECT_DATA_UPLOAD_FOLDER}/" in relative_path
 
 
 def _project_file_slug(file_name: str) -> str:
