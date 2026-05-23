@@ -331,10 +331,14 @@ def _filter_project_file_uploads(
     project_scope: str,
     allowed_project_refs: set[str],
 ) -> list[dict]:
+    project_data_uploads = [upload for upload in uploads if _is_project_data_upload(upload)]
+    if project_scope != "restricted":
+        return project_data_uploads
+
     allowed_survey_names = {
         str(survey.get("survey_name") or "")
         for survey in surveys
-        if project_scope != "restricted" or (survey.get("project_ref") or "") in allowed_project_refs
+        if (survey.get("project_ref") or "") in allowed_project_refs
     }
     allowed_project_file_slugs = {_slugify_project_file_name(name) for name in allowed_survey_names if name}
     if not allowed_project_file_slugs:
@@ -342,9 +346,8 @@ def _filter_project_file_uploads(
 
     return [
         upload
-        for upload in uploads
-        if _is_project_data_upload(upload)
-        and _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
+        for upload in project_data_uploads
+        if _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
     ]
 
 
