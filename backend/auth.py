@@ -75,7 +75,7 @@ def init_auth(app: Flask) -> None:
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
     app.config.setdefault("SESSION_COOKIE_SECURE", os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true")
     app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
-    app.config.setdefault("ALP_RESET_LINK_HOURS", int(os.getenv("ALP_RESET_LINK_HOURS", "48")))
+    app.config.setdefault("ALP_RESET_LINK_HOURS", int(os.getenv("ALP_RESET_LINK_HOURS", "168")))
 
     db.init_app(app)
     csrf.init_app(app)
