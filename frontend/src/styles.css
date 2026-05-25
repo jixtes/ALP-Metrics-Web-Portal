@@ -418,6 +418,19 @@ select {
   gap: 20px;
 }
 
+.powerbi-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.powerbi-refresh-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
 
 .stat-card {
   border-radius: 22px;

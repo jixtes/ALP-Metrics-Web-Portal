@@ -332,6 +332,19 @@ def create_app() -> Flask:
             if report_scope == "restricted":
                 selections = [report for report in selections if report.get("report_id") in allowed_report_ids]
             embed_configs = []
+            refresh_cache: dict[str, dict | None] = {}
+
+            def latest_refresh(dataset_id: str | None) -> dict | None:
+                if not dataset_id:
+                    return None
+                if dataset_id not in refresh_cache:
+                    try:
+                        history = client.get_refresh_history(dataset_id, top=1)
+                        refresh_cache[dataset_id] = history[0] if history else None
+                    except Exception:
+                        refresh_cache[dataset_id] = None
+                return refresh_cache[dataset_id]
+
             for selection in selections:
                 try:
                     username, roles = _current_powerbi_identity(preview)
@@ -346,6 +359,7 @@ def create_app() -> Flask:
                             **embed_config,
                             "selectionId": selection["id"],
                             "selectedAt": selection["selected_at"],
+                            "latestRefresh": latest_refresh(embed_config.get("datasetId")),
                             "error": None,
                         }
                     )
@@ -361,6 +375,7 @@ def create_app() -> Flask:
                             "tokenExpiration": None,
                             "selectionId": selection["id"],
                             "selectedAt": selection["selected_at"],
+                            "latestRefresh": latest_refresh(selection.get("dataset_id")),
                             "error": str(exc),
                         }
                     )

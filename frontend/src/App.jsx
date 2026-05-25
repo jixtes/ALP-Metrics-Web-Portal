@@ -297,20 +297,25 @@ function EmbeddedPowerBIReport({ report }) {
     await cardRef.current.requestFullscreen();
   }
 
+  const latestRefreshAt = report.latestRefresh?.endTime || report.latestRefresh?.startTime;
+
   return (
     <article className="detail-card powerbi-card" ref={cardRef}>
       <div className="section-heading section-heading-inline">
         <div>
           <h2>{report.reportName || "Power BI dashboard"}</h2>
         </div>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={handleFullscreenToggle}
-          disabled={!document.fullscreenEnabled}
-        >
-          {isFullscreen ? "Exit full screen" : "Switch to full screen"}
-        </button>
+        <div className="powerbi-heading-actions">
+          <span className="powerbi-refresh-meta">Last refresh {formatDate(latestRefreshAt)}</span>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={handleFullscreenToggle}
+            disabled={!document.fullscreenEnabled}
+          >
+            {isFullscreen ? "Exit full screen" : "Switch to full screen"}
+          </button>
+        </div>
       </div>
 
       {report.error ? <div className="table-empty">{report.error}</div> : null}
