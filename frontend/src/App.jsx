@@ -541,8 +541,13 @@ function App() {
 
     try {
       const reportsData = await apiRequest("/api/powerbi/reports");
-      setAvailableReports(reportsData.reports ?? []);
-      setSelectedPowerBIReports((current) => (current.length > 0 ? current : savedReportIds));
+      const reports = reportsData.reports ?? [];
+      const validReportIds = new Set(reports.map((report) => report.id).filter(Boolean));
+      setAvailableReports(reports);
+      setSelectedPowerBIReports((current) => {
+        const sourceIds = current.length > 0 ? current : savedReportIds;
+        return sourceIds.filter((reportId) => validReportIds.has(reportId));
+      });
     } catch (loadError) {
       setAvailableReports([]);
       setPowerBIError(loadError.message);

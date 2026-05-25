@@ -140,6 +140,7 @@ def create_app() -> Flask:
             config = PowerBIConfig.from_env()
             client = PowerBIClient(config)
             reports = client.list_reports()
+            _prune_powerbi_selections(db_path, reports)
             dataset_cache: dict[str, dict] = {}
             refresh_cache: dict[str, dict | None] = {}
 
@@ -211,9 +212,7 @@ def create_app() -> Flask:
             client = PowerBIClient(config)
             reports = client.list_reports()
             report_lookup = {str(report.get("id")): report for report in reports if report.get("id")}
-            missing = [report_id for report_id in report_ids if report_id not in report_lookup]
-            if missing:
-                return jsonify({"error": f"Unknown report IDs: {', '.join(missing)}"}), 400
+            valid_report_ids = [report_id for report_id in report_ids if report_id in report_lookup]
 
             timestamp = datetime.now(tz=timezone.utc).isoformat()
             selections = [
@@ -225,7 +224,7 @@ def create_app() -> Flask:
                     "display_order": index,
                     "selected_at": timestamp,
                 }
-                for index, report_id in enumerate(report_ids)
+                for index, report_id in enumerate(valid_report_ids)
             ]
             replace_powerbi_report_selections(db_path, selections)
             return jsonify({"reports": fetch_powerbi_report_selections(db_path)})
@@ -349,6 +348,28 @@ def _filter_project_file_uploads(
         for upload in project_data_uploads
         if _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
     ]
+
+
+def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
+    current_report_ids = {str(report.get("id")) for report in reports if report.get("id")}
+    saved_selections = fetch_powerbi_report_selections(db_path)
+    if not saved_selections:
+        return
+
+    kept_selections = [
+        {
+            "report_id": selection["report_id"],
+            "report_name": selection["report_name"],
+            "dataset_id": selection.get("dataset_id"),
+            "embed_url": selection.get("embed_url"),
+            "display_order": index,
+            "selected_at": selection["selected_at"],
+        }
+        for index, selection in enumerate(saved_selections)
+        if selection.get("report_id") in current_report_ids
+    ]
+    if len(kept_selections) != len(saved_selections):
+        replace_powerbi_report_selections(db_path, kept_selections)
 
 
 def _is_project_data_upload(upload: dict) -> bool:
