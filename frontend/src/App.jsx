@@ -2312,7 +2312,8 @@ function App() {
                                     type="button"
                                     className="secondary-button secondary-button-compact"
                                     onClick={() => openRolePreview(role)}
-                                    disabled={role.isSystem}
+                                    disabled
+                                    title="Role preview will be available in a future release."
                                   >
                                     Preview
                                   </button>
