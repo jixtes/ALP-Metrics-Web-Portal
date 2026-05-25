@@ -313,6 +313,11 @@ select {
   margin: 0;
 }
 
+.run-meta.preview-mode-label {
+  color: #9f3a17;
+  font-weight: 800;
+}
+
 .login-forgot-note {
   margin-top: 14px;
 }

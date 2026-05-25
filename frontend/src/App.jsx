@@ -2480,7 +2480,7 @@ function App() {
               <strong>{authUser.fullName || authUser.email}</strong>
             </p>
             <p className="run-meta">Role: {previewRoleName || userRoles.join(", ")}</p>
-            {isRolePreview ? <p className="run-meta">Preview mode: {previewRoleName}</p> : null}
+            {isRolePreview ? <p className="run-meta preview-mode-label">Preview mode</p> : null}
           </div>
 
           <div className="hero-copy-actions">
