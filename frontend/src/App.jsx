@@ -444,6 +444,7 @@ function App() {
   const [usersError, setUsersError] = useState("");
   const [usersMessage, setUsersMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [userRoleFilter, setUserRoleFilter] = useState("");
   const [isUserFormVisible, setIsUserFormVisible] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -1476,14 +1477,27 @@ function App() {
     const comparison = compareSurveyValues(leftValue, rightValue, column.type);
     return uploadSortConfig.direction === "asc" ? comparison : -comparison;
   });
+  const userRoleOptions = Array.from(
+    new Set([
+      ...roles.map((role) => role.name),
+      ...users.flatMap((user) => user.roles ?? []),
+    ].filter(Boolean)),
+  ).sort((left, right) => left.localeCompare(right));
   const normalizedUserFilter = userSearch.trim().toLowerCase();
+  const normalizedUserRoleFilter = userRoleFilter.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
-    if (!normalizedUserFilter) {
-      return true;
-    }
-    return [user.email, user.fullName, user.primaryRole, ...(user.roles ?? [])]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(normalizedUserFilter));
+    const matchesText =
+      !normalizedUserFilter ||
+      [user.email, user.fullName, user.primaryRole, ...(user.roles ?? [])]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedUserFilter));
+    const matchesRole =
+      !normalizedUserRoleFilter ||
+      (user.roles ?? [])
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase() === normalizedUserRoleFilter);
+
+    return matchesText && matchesRole;
   });
   const normalizedRoleFilter = roleSearch.trim().toLowerCase();
   const filteredRoles = roles.filter((role) => {
@@ -1981,17 +1995,36 @@ function App() {
                   {isUsersLoading ? <div className="table-empty">Loading users...</div> : null}
 
                   {!isUsersLoading && users.length > 0 ? (
-                    <div className="filter-row">
-                      <label className="filter-label" htmlFor="user-filter">
-                        Filter users
-                      </label>
-                      <input
-                        id="user-filter"
-                        type="search"
-                        value={userSearch}
-                        onChange={(event) => setUserSearch(event.target.value)}
-                        placeholder="Email, name, or role"
-                      />
+                    <div className="settings-filter-grid">
+                      <div className="filter-row">
+                        <label className="filter-label" htmlFor="user-filter">
+                          Filter users
+                        </label>
+                        <input
+                          id="user-filter"
+                          type="search"
+                          value={userSearch}
+                          onChange={(event) => setUserSearch(event.target.value)}
+                          placeholder="Email, name, or role"
+                        />
+                      </div>
+                      <div className="filter-row">
+                        <label className="filter-label" htmlFor="user-role-filter">
+                          Filter by role
+                        </label>
+                        <select
+                          id="user-role-filter"
+                          value={userRoleFilter}
+                          onChange={(event) => setUserRoleFilter(event.target.value)}
+                        >
+                          <option value="">All roles</option>
+                          {userRoleOptions.map((roleName) => (
+                            <option key={roleName} value={roleName}>
+                              {roleName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   ) : null}
 
