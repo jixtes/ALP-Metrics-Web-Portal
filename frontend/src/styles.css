@@ -117,6 +117,23 @@ select {
   background: rgba(255, 255, 255, 0.75);
 }
 
+.login-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  min-height: 34px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.login-form .login-checkbox-row input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .login-form button,
 .run-panel button {
   border: none;

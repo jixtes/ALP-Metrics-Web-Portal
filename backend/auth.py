@@ -74,6 +74,10 @@ def init_auth(app: Flask) -> None:
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
     app.config.setdefault("SESSION_COOKIE_SECURE", os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true")
+    app.config.setdefault("REMEMBER_COOKIE_DURATION", timedelta(days=7))
+    app.config.setdefault("REMEMBER_COOKIE_HTTPONLY", True)
+    app.config.setdefault("REMEMBER_COOKIE_SAMESITE", "Lax")
+    app.config.setdefault("REMEMBER_COOKIE_SECURE", app.config["SESSION_COOKIE_SECURE"])
     app.config.setdefault("WTF_CSRF_TIME_LIMIT", None)
     app.config.setdefault("ALP_RESET_LINK_HOURS", int(os.getenv("ALP_RESET_LINK_HOURS", "168")))
 
@@ -112,6 +116,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         payload = request.get_json(silent=True) or {}
         email = str(payload.get("email", "")).strip().lower()
         password = str(payload.get("password", ""))
+        remember = bool(payload.get("remember"))
 
         if not email or not password:
             return jsonify({"error": "Email and password are required."}), 400
@@ -124,7 +129,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             db.session.rollback()
             return jsonify({"error": "Invalid email or password."}), 401
 
-        login_user(user, remember=False)
+        login_user(user, remember=remember)
         db.session.commit()
         return jsonify(
             {

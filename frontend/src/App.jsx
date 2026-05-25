@@ -384,6 +384,7 @@ function App() {
   const [credentials, setCredentials] = useState({
     email: new URLSearchParams(window.location.search).get("email") ?? "",
     password: "",
+    remember: false,
   });
   const [loginError, setLoginError] = useState("");
   const [loginMessage, setLoginMessage] = useState(() =>
@@ -835,7 +836,7 @@ function App() {
       });
       setAuthUser(data.user ?? null);
       setLoginMessage("");
-      setCredentials({ email: "", password: "" });
+      setCredentials({ email: "", password: "", remember: false });
       setCurrentView("dashboard");
       setRoutePath("/");
       window.history.replaceState({}, "", "/");
@@ -1649,6 +1650,16 @@ function App() {
               autoComplete="current-password"
             />
 
+            <label className="login-checkbox-row" htmlFor="remember">
+              <input
+                id="remember"
+                type="checkbox"
+                checked={credentials.remember}
+                onChange={(event) => handleCredentialsChange("remember", event.target.checked)}
+              />
+              <span>Remember me</span>
+            </label>
+
             <button type="submit">Sign in</button>
             {loginError ? <p className="login-error">{loginError}</p> : null}
           </form>
@@ -2312,8 +2323,7 @@ function App() {
                                     type="button"
                                     className="secondary-button secondary-button-compact"
                                     onClick={() => openRolePreview(role)}
-                                    disabled
-                                    title="Role preview will be available in a future release."
+                                    disabled={role.isSystem}
                                   >
                                     Preview
                                   </button>
@@ -2516,7 +2526,7 @@ function App() {
         </article>
         <article className="stat-card">
           <span>Reporting dashboards</span>
-          <strong>{embeddedReports.length}</strong>
+          <strong>{isPowerBILoading && embeddedReports.length === 0 ? "Loading..." : embeddedReports.length}</strong>
         </article>
       </section>
 
