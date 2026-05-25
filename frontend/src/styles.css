@@ -1189,6 +1189,8 @@ tbody tr:hover,
 .role-project-picker-list {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  width: calc(100% - 18px);
+  margin-left: 18px;
 }
 
 .role-project-picker-item {
