@@ -1965,6 +1965,8 @@ function App() {
                     </form>
                   ) : null}
 
+                  <hr className="settings-section-divider" />
+
                   {issuedResetLink ? (
                     <div className="detail-section-block">
                       <div className="detail-section-heading">
@@ -2306,6 +2308,8 @@ function App() {
                     </div>
                     </form>
                   ) : null}
+
+                  <hr className="settings-section-divider" />
 
                   {isRolesLoading ? <div className="table-empty">Loading roles...</div> : null}
 
