@@ -876,6 +876,10 @@ function App() {
     }
   }
 
+  function handleClosePreview() {
+    window.close();
+  }
+
   async function handleRunPipeline() {
     setIsRunning(true);
     setError("");
@@ -2526,8 +2530,12 @@ function App() {
                 Open settings
               </button>
             ) : null}
-            <button type="button" className="hero-action-button hero-action-button-muted" onClick={handleLogout}>
-              Log out
+            <button
+              type="button"
+              className="hero-action-button hero-action-button-muted"
+              onClick={isRolePreview ? handleClosePreview : handleLogout}
+            >
+              {isRolePreview ? "Close" : "Log out"}
             </button>
           </div>
         </div>
