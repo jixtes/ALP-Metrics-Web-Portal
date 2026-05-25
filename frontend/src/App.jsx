@@ -2334,7 +2334,7 @@ function App() {
                                     onClick={() => openRolePreview(role)}
                                     disabled={role.isSystem}
                                   >
-                                    Preview
+                                    Preview access
                                   </button>
 	                                  <button
 	                                    type="button"
