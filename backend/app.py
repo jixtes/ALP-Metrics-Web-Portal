@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+from threading import Thread
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_security import auth_required, current_user, roles_required
@@ -12,7 +13,9 @@ from powerbi.client import PowerBIClient, PowerBIConfig
 from .auth import current_user_project_access, current_user_report_access, current_user_upload_access, init_auth
 from .database import (
     fetch_dashboard,
+    fetch_pipeline_run,
     fetch_powerbi_report_selections,
+    insert_pipeline_run,
     initialize_database,
     replace_powerbi_report_selections,
 )
@@ -29,6 +32,28 @@ def _current_powerbi_identity() -> tuple[str | None, list[str] | None]:
     username = getattr(current_user, "email", None)
     roles = sorted({role.name for role in getattr(current_user, "roles", []) if getattr(role, "name", None)})
     return username, roles or None
+
+
+def _run_pipeline_background(
+    db_path: Path,
+    *,
+    run_id: int,
+    extract_mode: str,
+    triggered_by_email: str | None,
+    triggered_by_name: str | None,
+) -> None:
+    try:
+        run_pipeline_and_snapshot(
+            db_path,
+            run_id=run_id,
+            extract_mode=extract_mode,
+            upload_to_sharepoint=True,
+            triggered_by_email=triggered_by_email,
+            triggered_by_name=triggered_by_name,
+        )
+    except Exception:
+        # run_pipeline_and_snapshot records failed runs in the database.
+        pass
 
 
 def create_app() -> Flask:
@@ -89,17 +114,40 @@ def create_app() -> Flask:
         if extract_mode not in {"surveycto", "csv"}:
             return jsonify({"error": "extractMode must be either 'surveycto' or 'csv'."}), 400
 
-        try:
-            result = run_pipeline_and_snapshot(
-                db_path,
-                extract_mode=extract_mode,
-                upload_to_sharepoint=True,
-                triggered_by_email=getattr(current_user, "email", None),
-                triggered_by_name=getattr(current_user, "full_name", None),
-            )
-            return jsonify(result), 201
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+        pipeline_status = get_pipeline_repo_status()
+        run_id = insert_pipeline_run(
+            db_path,
+            status="running",
+            extract_mode=extract_mode,
+            started_at=datetime.now(tz=timezone.utc).isoformat(),
+            triggered_by_email=getattr(current_user, "email", None),
+            triggered_by_name=getattr(current_user, "full_name", None),
+            pipeline_branch=pipeline_status.get("branch"),
+            pipeline_commit_before=pipeline_status.get("commit"),
+            message="Pipeline execution started.",
+        )
+
+        thread = Thread(
+            target=_run_pipeline_background,
+            kwargs={
+                "db_path": db_path,
+                "run_id": run_id,
+                "extract_mode": extract_mode,
+                "triggered_by_email": getattr(current_user, "email", None),
+                "triggered_by_name": getattr(current_user, "full_name", None),
+            },
+            daemon=True,
+        )
+        thread.start()
+        return jsonify({"run_id": run_id, "status": "running", "message": "Pipeline execution started."}), 202
+
+    @app.get("/api/pipeline/runs/<int:run_id>")
+    @auth_required("session")
+    def pipeline_run(run_id: int):
+        run = fetch_pipeline_run(db_path, run_id)
+        if run is None:
+            return jsonify({"error": "Pipeline run not found."}), 404
+        return jsonify(run)
 
     @app.get("/api/pipeline/status")
     @auth_required("session")

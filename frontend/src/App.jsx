@@ -39,6 +39,12 @@ const uploadColumns = [
 
 let powerBIClientPromise;
 
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function formatDate(value) {
   if (!value) {
     return "N/A";
@@ -503,10 +509,12 @@ function App() {
       setDashboard(data);
       const preferredSurveyExists = (data.surveys ?? []).some((survey) => survey.id === preferredSurveyId);
       setSelectedSurveyId(preferredSurveyExists ? preferredSurveyId : null);
+      return data;
     } catch (loadError) {
       setError(loadError.message);
       setDashboard(emptyDashboard);
       setSelectedSurveyId(null);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -803,14 +811,31 @@ function App() {
     setError("");
 
     try {
-      await apiRequest("/api/pipeline/run", {
+      const runData = await apiRequest("/api/pipeline/run", {
         method: "POST",
         body: { extractMode: mode },
       });
+      const runId = runData.run_id;
+      let completedRun = null;
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await delay(attempt === 0 ? 1200 : 5000);
+        const run = await apiRequest(`/api/pipeline/runs/${runId}`);
+        if (run?.status && run.status !== "running") {
+          completedRun = run;
+          break;
+        }
+      }
+      if (!completedRun) {
+        setError("The update is still running. Refresh manually later to check the result.");
+        return;
+      }
+      if (completedRun.status === "failed") {
+        setError(completedRun.message || "The update failed.");
+      }
+      await refreshPipelineView();
     } catch (runError) {
       setError(runError.message);
     } finally {
-      await refreshPipelineView();
       setIsRunning(false);
     }
   }
@@ -1979,7 +2004,11 @@ function App() {
                         </div>
                         <div className="stat-card compact-stat-card">
                           <span>Last run</span>
-                          <strong>{formatDate(dashboard.latest_run.completed_at)}</strong>
+                          <strong>
+                            {dashboard.latest_run.status === "running"
+                              ? "In progress"
+                              : formatDate(dashboard.latest_run.completed_at)}
+                          </strong>
                           <p className="commit-card-meta">
                             Triggered by:{" "}
                             {dashboard.latest_run.triggered_by_name || dashboard.latest_run.triggered_by_email || "N/A"}
@@ -2373,7 +2402,12 @@ function App() {
           <p className="run-meta">
             Last updated by: {dashboard.latest_run?.triggered_by_name || dashboard.latest_run?.triggered_by_email || "N/A"}
           </p>
-          <p className="run-meta">Last updated at: {formatDate(dashboard.latest_run?.completed_at)}</p>
+          <p className="run-meta">
+            Last updated at:{" "}
+            {dashboard.latest_run?.status === "running"
+              ? "In progress"
+              : formatDate(dashboard.latest_run?.completed_at)}
+          </p>
         </div>
       </section>
 

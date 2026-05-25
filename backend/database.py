@@ -275,6 +275,21 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
         }
 
 
+def fetch_pipeline_run(db_path: Path, run_id: int) -> dict[str, Any] | None:
+    with connect_database(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT id, status, extract_mode, started_at, triggered_by_email, triggered_by_name,
+                   completed_at, message, pipeline_branch,
+                   pipeline_commit_before, pipeline_commit_after, run_log
+            FROM pipeline_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        return _decode_row(row)
+
+
 def fetch_survey_records(db_path: Path, survey_id: int, limit: int = 10) -> list[dict[str, Any]]:
     with connect_database(db_path) as connection:
         rows = connection.execute(

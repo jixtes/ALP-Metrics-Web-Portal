@@ -96,6 +96,7 @@ class PipelineExecutionError(Exception):
 def run_pipeline_and_snapshot(
     db_path: Path,
     *,
+    run_id: int | None = None,
     extract_mode: str = "surveycto",
     upload_to_sharepoint: bool = False,
     triggered_by_email: str | None = None,
@@ -104,17 +105,18 @@ def run_pipeline_and_snapshot(
     db_path = Path(db_path).resolve()
     started_at = _now_iso()
     pipeline_status = get_pipeline_repo_status()
-    run_id = insert_pipeline_run(
-        db_path,
-        status="running",
-        extract_mode=extract_mode,
-        started_at=started_at,
-        triggered_by_email=triggered_by_email,
-        triggered_by_name=triggered_by_name,
-        pipeline_branch=pipeline_status.get("branch"),
-        pipeline_commit_before=pipeline_status.get("commit"),
-        message="Pipeline execution started.",
-    )
+    if run_id is None:
+        run_id = insert_pipeline_run(
+            db_path,
+            status="running",
+            extract_mode=extract_mode,
+            started_at=started_at,
+            triggered_by_email=triggered_by_email,
+            triggered_by_name=triggered_by_name,
+            pipeline_branch=pipeline_status.get("branch"),
+            pipeline_commit_before=pipeline_status.get("commit"),
+            message="Pipeline execution started.",
+        )
 
     with RUN_LOCK:
         run_log = ""
