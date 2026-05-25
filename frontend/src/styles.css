@@ -1187,6 +1187,11 @@ tbody tr:hover,
   overflow-wrap: anywhere;
 }
 
+.role-project-picker-item span,
+.role-project-picker-item small {
+  font-size: 0.72rem;
+}
+
 .powerbi-refresh-button {
   width: fit-content;
   min-height: 36px;

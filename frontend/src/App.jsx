@@ -2222,14 +2222,16 @@ function App() {
                     </div>
 
                     {roleForm.reportScope === "restricted" ? (
-                      <div className="report-picker-list">
+                      <div className="report-picker-list role-project-picker-list">
                         {availableReports.length === 0 ? <div className="table-empty">No dashboards are available yet.</div> : null}
                         {availableReports.map((report) => {
                           const isChecked = roleForm.allowedReportIds.includes(report.id);
                           return (
                             <label
                               key={report.id}
-                              className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}
+                              className={`report-picker-item role-project-picker-item${
+                                isChecked ? " report-picker-item-active" : ""
+                              }`}
                             >
                               <input
                                 type="checkbox"
