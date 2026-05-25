@@ -87,6 +87,10 @@ function formatUploadScope(scope) {
   return scope === "all" ? "Visible" : "Hidden";
 }
 
+function rolePreviewQuery(rolePreviewId) {
+  return rolePreviewId ? `?rolePreviewId=${encodeURIComponent(rolePreviewId)}` : "";
+}
+
 function compareSurveyValues(left, right, type) {
   if (type === "date") {
     const leftTime = left ? new Date(left).getTime() : Number.NEGATIVE_INFINITY;
@@ -182,9 +186,43 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function EmbeddedPowerBIReport({ report, onManageDashboards }) {
+function EmbeddedPowerBIReport({ report }) {
+  const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
+  const embeddedReportRef = useRef(null);
   const [embedError, setEmbedError] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  function applyReportFit(fullscreen) {
+    const embeddedReport = embeddedReportRef.current;
+    const models = getPowerBIModels();
+    if (!embeddedReport || !models) {
+      return;
+    }
+
+    embeddedReport.updateSettings({
+      layoutType: models.LayoutType.Custom,
+      customLayout: {
+        displayOption: fullscreen ? models.DisplayOption.FitToPage : models.DisplayOption.FitToWidth,
+      },
+    });
+  }
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      const fullscreen = document.fullscreenElement === cardRef.current;
+      setIsFullscreen(fullscreen);
+      applyReportFit(fullscreen);
+      window.setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 100);
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!report || report.error || !embedContainerRef.current) {
@@ -207,7 +245,7 @@ function EmbeddedPowerBIReport({ report, onManageDashboards }) {
       activeService = powerbi;
       setEmbedError("");
       powerbi.reset(embedContainerRef.current);
-      powerbi.embed(embedContainerRef.current, {
+      embeddedReportRef.current = powerbi.embed(embedContainerRef.current, {
         type: report.type,
         tokenType: models.TokenType.Embed,
         accessToken: report.accessToken,
@@ -242,17 +280,36 @@ function EmbeddedPowerBIReport({ report, onManageDashboards }) {
       if (activeService && embedContainerRef.current) {
         activeService.reset(embedContainerRef.current);
       }
+      embeddedReportRef.current = null;
     };
   }, [report]);
 
+  async function handleFullscreenToggle() {
+    if (!cardRef.current || !document.fullscreenEnabled) {
+      return;
+    }
+
+    if (document.fullscreenElement === cardRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    await cardRef.current.requestFullscreen();
+  }
+
   return (
-    <article className="detail-card powerbi-card">
+    <article className="detail-card powerbi-card" ref={cardRef}>
       <div className="section-heading section-heading-inline">
         <div>
           <h2>{report.reportName || "Power BI dashboard"}</h2>
         </div>
-        <button type="button" className="secondary-button" onClick={onManageDashboards}>
-          Manage dashboards
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={handleFullscreenToggle}
+          disabled={!document.fullscreenEnabled}
+        >
+          {isFullscreen ? "Exit full screen" : "Switch to full screen"}
         </button>
       </div>
 
@@ -311,6 +368,7 @@ function App() {
   const [mode, setMode] = useState("surveycto");
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
+  const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
   const [uploadFilter, setUploadFilter] = useState("");
   const [uploadFolderFilter, setUploadFolderFilter] = useState("");
   const [sortConfig, setSortConfig] = useState({
@@ -406,15 +464,20 @@ function App() {
   const [isResetValidating, setIsResetValidating] = useState(false);
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [isResetComplete, setIsResetComplete] = useState(false);
+  const rolePreviewId = new URLSearchParams(window.location.search).get("rolePreviewId") ?? "";
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
   const isAuthenticated = Boolean(authUser);
   const userRoles = authUser?.roles ?? [];
-  const canManageUsers = userRoles.includes("admin");
-  const canManagePowerBI = userRoles.includes("admin");
-  const canManagePipeline = userRoles.includes("admin");
-  const canRunPipeline = isAuthenticated;
-  const canSeeUploads = canManageUsers || (authUser?.uploadScope ?? "all") !== "none";
+  const isAdmin = userRoles.includes("admin");
+  const previewRoleName = dashboard.rolePreview?.name ?? "";
+  const isRolePreview = isAdmin && Boolean(rolePreviewId) && Boolean(previewRoleName);
+  const previewUploadScope = dashboard.rolePreview?.uploadScope;
+  const canManageUsers = isAdmin && !isRolePreview;
+  const canManagePowerBI = isAdmin && !isRolePreview;
+  const canManagePipeline = isAdmin && !isRolePreview;
+  const canRunPipeline = isAuthenticated && !isRolePreview;
+  const canSeeUploads = isRolePreview ? previewUploadScope !== "none" : canManageUsers || (authUser?.uploadScope ?? "all") !== "none";
   const visibleSettingsSections = settingsSections.filter((section) => {
     if (section.key === "profile") {
       return true;
@@ -505,7 +568,7 @@ function App() {
     setError("");
 
     try {
-      const data = await apiRequest("/api/dashboard");
+      const data = await apiRequest(`/api/dashboard${rolePreviewQuery(rolePreviewId)}`);
       setDashboard(data);
       const preferredSurveyExists = (data.surveys ?? []).some((survey) => survey.id === preferredSurveyId);
       setSelectedSurveyId(preferredSurveyExists ? preferredSurveyId : null);
@@ -526,8 +589,8 @@ function App() {
 
     try {
       const [selectionsData, embedsData] = await Promise.all([
-        apiRequest("/api/powerbi/selections"),
-        apiRequest("/api/powerbi/embed-configs"),
+        apiRequest(`/api/powerbi/selections${rolePreviewQuery(rolePreviewId)}`),
+        apiRequest(`/api/powerbi/embed-configs${rolePreviewQuery(rolePreviewId)}`),
       ]);
 
       const selectedIds = (selectionsData.reports ?? []).map((report) => report.report_id);
@@ -1199,6 +1262,10 @@ function App() {
     }
   }
 
+  function openRolePreview(role) {
+    window.open(`/?rolePreviewId=${encodeURIComponent(role.id)}`, "_blank", "noopener,noreferrer");
+  }
+
   async function handleCreateUser(event) {
     event.preventDefault();
     setIsCreatingUser(true);
@@ -1350,7 +1417,14 @@ function App() {
   }
 
   const normalizedFilter = surveyFilter.trim().toLowerCase();
+  const surveyPhaseOptions = [...new Set(dashboard.surveys.map((survey) => survey.phase).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
   const filteredSurveys = dashboard.surveys.filter((survey) => {
+    const matchesPhase = !surveyPhaseFilter || survey.phase === surveyPhaseFilter;
+    if (!matchesPhase) {
+      return false;
+    }
     if (!normalizedFilter) {
       return true;
     }
@@ -1469,7 +1543,7 @@ function App() {
   const entityTypeTotals = formatList(selectedPreview.entity_type_totals ?? selectedPreview.most_entity_types ?? []);
   const mostTargetGroups = formatList(selectedPreview.most_target_groups ?? []);
   const enabledModules = buildEnabledModules(selectedSurvey);
-  const projectOptions = [...new Set(dashboard.surveys.map((survey) => survey.project_ref).filter(Boolean))].sort((left, right) =>
+  const projectOptions = [...new Set(dashboard.surveys.map((survey) => survey.survey_name).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right),
   );
   const activeSettings =
@@ -2226,18 +2300,26 @@ function App() {
                               <td data-label="Users">{role.userCount}</td>
                               <td data-label="Action">
                                 <div className="settings-actions">
+	                                  <button
+	                                    type="button"
+	                                    className="secondary-button secondary-button-compact"
+	                                    onClick={() => startEditingRole(role)}
+	                                    disabled={role.isSystem}
+	                                  >
+	                                    Edit
+	                                  </button>
                                   <button
                                     type="button"
                                     className="secondary-button secondary-button-compact"
-                                    onClick={() => startEditingRole(role)}
+                                    onClick={() => openRolePreview(role)}
                                     disabled={role.isSystem}
                                   >
-                                    Edit
+                                    Preview
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="secondary-button secondary-button-compact"
-                                    onClick={() => handleDeleteRole(role)}
+	                                  <button
+	                                    type="button"
+	                                    className="secondary-button secondary-button-compact"
+	                                    onClick={() => handleDeleteRole(role)}
                                     disabled={role.isSystem || deletingRoleId === role.id}
                                   >
                                     {deletingRoleId === role.id ? "Deleting..." : "Delete"}
@@ -2377,13 +2459,16 @@ function App() {
               <span>Signed in as: </span>
               <strong>{authUser.fullName || authUser.email}</strong>
             </p>
-            <p className="run-meta">Role: {userRoles.join(", ")}</p>
+            <p className="run-meta">Role: {previewRoleName || userRoles.join(", ")}</p>
+            {isRolePreview ? <p className="run-meta">Preview mode: {previewRoleName}</p> : null}
           </div>
 
           <div className="hero-copy-actions">
-            <button type="button" className="hero-action-button hero-action-button-muted" onClick={() => setCurrentView("settings")}>
-              Open settings
-            </button>
+            {!isRolePreview ? (
+              <button type="button" className="hero-action-button hero-action-button-muted" onClick={() => setCurrentView("settings")}>
+                Open settings
+              </button>
+            ) : null}
             <button type="button" className="hero-action-button hero-action-button-muted" onClick={handleLogout}>
               Log out
             </button>
@@ -2624,6 +2709,19 @@ function App() {
                       placeholder="Filter surveys"
                       aria-label="Filter surveys"
                     />
+                    <select
+                      id="survey-phase-filter"
+                      value={surveyPhaseFilter}
+                      onChange={(event) => setSurveyPhaseFilter(event.target.value)}
+                      aria-label="Filter surveys by phase"
+                    >
+                      <option value="">All phases</option>
+                      {surveyPhaseOptions.map((phase) => (
+                        <option key={phase} value={phase}>
+                          {phase}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {isLoading ? (
@@ -2784,11 +2882,7 @@ function App() {
           embeddedReports
             .filter((report) => `powerbi:${report.reportId}` === activeDashboardTab)
             .map((report) => (
-              <EmbeddedPowerBIReport
-                key={report.reportId}
-                report={report}
-                onManageDashboards={() => setCurrentView("settings")}
-              />
+              <EmbeddedPowerBIReport key={report.reportId} report={report} />
             ))
         ) : null}
       </section>

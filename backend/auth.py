@@ -592,6 +592,30 @@ def current_user_upload_access() -> str:
     return role.upload_scope or "all"
 
 
+def current_user_is_admin() -> bool:
+    if not current_user.is_authenticated:
+        return False
+    return any(role.name == "admin" for role in current_user.roles)
+
+
+def role_access_preview(role_id: int | None) -> dict | None:
+    if not role_id or not current_user_is_admin():
+        return None
+
+    role = Role.query.get(role_id)
+    if not role or role.name == "admin":
+        return None
+
+    return {
+        "role": _serialize_role(role),
+        "project_scope": role.project_scope or "all",
+        "allowed_project_refs": set(_load_json_list(role.allowed_project_refs_json)),
+        "report_scope": role.report_scope or "all",
+        "allowed_report_ids": set(_load_json_list(role.allowed_report_ids_json)),
+        "upload_scope": role.upload_scope or "all",
+    }
+
+
 def _lookup_active_reset_token(plaintext_token: str) -> PasswordResetToken | None:
     if not plaintext_token:
         return None

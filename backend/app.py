@@ -10,7 +10,13 @@ from flask_security import auth_required, current_user, roles_required
 
 from powerbi.client import PowerBIClient, PowerBIConfig
 
-from .auth import current_user_project_access, current_user_report_access, current_user_upload_access, init_auth
+from .auth import (
+    current_user_project_access,
+    current_user_report_access,
+    current_user_upload_access,
+    init_auth,
+    role_access_preview,
+)
 from .database import (
     fetch_dashboard,
     fetch_pipeline_run,
@@ -28,8 +34,10 @@ from .service import (
 )
 
 
-def _current_powerbi_identity() -> tuple[str | None, list[str] | None]:
+def _current_powerbi_identity(preview: dict | None = None) -> tuple[str | None, list[str] | None]:
     username = getattr(current_user, "email", None)
+    if preview:
+        return username, [preview["role"]["name"]]
     roles = sorted({role.name for role in getattr(current_user, "roles", []) if getattr(role, "name", None)})
     return username, roles or None
 
@@ -77,16 +85,19 @@ def create_app() -> Flask:
     @app.get("/api/dashboard")
     @auth_required("session")
     def dashboard():
+        preview, preview_error = _role_preview_from_request()
+        if preview_error:
+            return jsonify({"error": preview_error}), 403
         dashboard_data = fetch_dashboard(db_path)
         dashboard_data["settings"] = {
             "resetLinkHours": int(app.config["ALP_RESET_LINK_HOURS"]),
         }
-        project_scope, allowed_project_refs = current_user_project_access()
+        project_scope, allowed_project_refs = _project_access(preview)
         if project_scope == "restricted":
             dashboard_data["surveys"] = [
-                survey for survey in dashboard_data["surveys"] if (survey.get("project_ref") or "") in allowed_project_refs
+                survey for survey in dashboard_data["surveys"] if _survey_project_access_key(survey) in allowed_project_refs
             ]
-        upload_scope = current_user_upload_access()
+        upload_scope = _upload_access(preview)
         if upload_scope == "none":
             dashboard_data["uploads"] = []
         elif upload_scope == "project_files":
@@ -99,6 +110,8 @@ def create_app() -> Flask:
         latest_run = dashboard_data.get("latest_run")
         if latest_run and latest_run.get("pipeline_commit_after"):
             latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after")))
+        if preview:
+            dashboard_data["rolePreview"] = preview["role"]
         return jsonify(dashboard_data)
 
     @app.get("/api/surveys/<int:survey_id>/records")
@@ -241,7 +254,10 @@ def create_app() -> Flask:
     @auth_required("session")
     def powerbi_selections():
         selections = fetch_powerbi_report_selections(db_path)
-        report_scope, allowed_report_ids = current_user_report_access()
+        preview, preview_error = _role_preview_from_request()
+        if preview_error:
+            return jsonify({"error": preview_error}), 403
+        report_scope, allowed_report_ids = _report_access(preview)
         if report_scope == "restricted":
             selections = [report for report in selections if report.get("report_id") in allowed_report_ids]
         return jsonify({"reports": selections})
@@ -309,13 +325,16 @@ def create_app() -> Flask:
             config = PowerBIConfig.from_env()
             client = PowerBIClient(config)
             selections = fetch_powerbi_report_selections(db_path)
-            report_scope, allowed_report_ids = current_user_report_access()
+            preview, preview_error = _role_preview_from_request()
+            if preview_error:
+                return jsonify({"error": preview_error}), 403
+            report_scope, allowed_report_ids = _report_access(preview)
             if report_scope == "restricted":
                 selections = [report for report in selections if report.get("report_id") in allowed_report_ids]
             embed_configs = []
             for selection in selections:
                 try:
-                    username, roles = _current_powerbi_identity()
+                    username, roles = _current_powerbi_identity(preview)
                     embed_config = client.build_embed_config(
                         report_id=selection["report_id"],
                         dataset_id=selection["dataset_id"],
@@ -385,7 +404,7 @@ def _filter_project_file_uploads(
     allowed_survey_names = {
         str(survey.get("survey_name") or "")
         for survey in surveys
-        if (survey.get("project_ref") or "") in allowed_project_refs
+        if _survey_project_access_key(survey) in allowed_project_refs
     }
     allowed_project_file_slugs = {_slugify_project_file_name(name) for name in allowed_survey_names if name}
     if not allowed_project_file_slugs:
@@ -396,6 +415,37 @@ def _filter_project_file_uploads(
         for upload in project_data_uploads
         if _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
     ]
+
+
+def _role_preview_from_request() -> tuple[dict | None, str | None]:
+    if "rolePreviewId" not in request.args:
+        return None, None
+    try:
+        role_id = int(request.args.get("rolePreviewId", ""))
+    except ValueError:
+        return None, "Invalid role preview."
+    preview = role_access_preview(role_id)
+    if not preview:
+        return None, "Role preview is only available to admins for non-admin roles."
+    return preview, None
+
+
+def _project_access(preview: dict | None) -> tuple[str, set[str]]:
+    if preview:
+        return preview["project_scope"], preview["allowed_project_refs"]
+    return current_user_project_access()
+
+
+def _report_access(preview: dict | None) -> tuple[str, set[str]]:
+    if preview:
+        return preview["report_scope"], preview["allowed_report_ids"]
+    return current_user_report_access()
+
+
+def _upload_access(preview: dict | None) -> str:
+    if preview:
+        return preview["upload_scope"]
+    return current_user_upload_access()
 
 
 def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
@@ -418,6 +468,10 @@ def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
     ]
     if len(kept_selections) != len(saved_selections):
         replace_powerbi_report_selections(db_path, kept_selections)
+
+
+def _survey_project_access_key(survey: dict) -> str:
+    return str(survey.get("survey_name") or "")
 
 
 def _is_project_data_upload(upload: dict) -> bool:

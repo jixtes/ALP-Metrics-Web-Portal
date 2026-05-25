@@ -43,6 +43,7 @@ PIPELINE_MODULE_PREFIXES = (
 SUMMARY_COLUMNS = {
     "survey_name": "project",
     "project_ref": "project_ref_pl",
+    "project_label": "project_label_pl",
     "client": "client_pl",
     "country": "country_pl",
     "phase": "phase_pl",
@@ -62,6 +63,7 @@ SUMMARY_COLUMNS = {
 SURVEY_PREVIEW_FIELDS = [
     "survey_name",
     "project_ref",
+    "project_label",
     "client",
     "country",
     "phase",
@@ -330,6 +332,7 @@ def build_snapshot_rows(export_path: Path) -> tuple[list[dict[str, Any]], list[d
             {
                 "survey_name": _stringify(survey_name),
                 "project_ref": _first_non_null(group["project_ref"]),
+                "project_label": _first_non_null(group["project_label"]),
                 "client": _first_non_null(group["client"]),
                 "country": _first_non_null(group["country"]),
                 "phase": _first_non_null(group["phase"]),

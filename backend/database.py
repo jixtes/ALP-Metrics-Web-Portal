@@ -39,6 +39,7 @@ def initialize_database(db_path: Path) -> None:
                 run_id INTEGER NOT NULL,
                 survey_name TEXT NOT NULL,
                 project_ref TEXT,
+                project_label TEXT,
                 client TEXT,
                 country TEXT,
                 phase TEXT,
@@ -94,6 +95,7 @@ def initialize_database(db_path: Path) -> None:
             """
         )
         _ensure_column(connection, "survey_summaries", "blr", "INTEGER")
+        _ensure_column(connection, "survey_summaries", "project_label", "TEXT")
         _ensure_column(connection, "pipeline_runs", "triggered_by_email", "TEXT")
         _ensure_column(connection, "pipeline_runs", "triggered_by_name", "TEXT")
         _ensure_column(connection, "pipeline_runs", "pipeline_branch", "TEXT")
@@ -176,10 +178,10 @@ def replace_run_snapshot(
         connection.executemany(
             """
             INSERT INTO survey_summaries (
-                run_id, survey_name, project_ref, client, country, phase, cohort, assessor,
+                run_id, survey_name, project_ref, project_label, client, country, phase, cohort, assessor,
                 trc, fpa, blr, submission_count, first_submission_at, last_submission_at, preview_json
             ) VALUES (
-                :run_id, :survey_name, :project_ref, :client, :country, :phase, :cohort, :assessor,
+                :run_id, :survey_name, :project_ref, :project_label, :client, :country, :phase, :cohort, :assessor,
                 :trc, :fpa, :blr, :submission_count, :first_submission_at, :last_submission_at, :preview_json
             )
             """,
@@ -253,7 +255,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
 
         summary_rows = connection.execute(
             """
-            SELECT id, survey_name, project_ref, client, country, phase, cohort, assessor,
+            SELECT id, survey_name, project_ref, project_label, client, country, phase, cohort, assessor,
                    trc, fpa, blr, submission_count, first_submission_at, last_submission_at, preview_json
             FROM survey_summaries
             ORDER BY submission_count DESC, survey_name ASC

@@ -370,6 +370,32 @@ select {
   min-height: auto;
 }
 
+.powerbi-card:fullscreen {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100vw;
+  height: 100vh;
+  padding: 18px;
+  border: none;
+  border-radius: 0;
+  background: #f7faf8;
+  box-shadow: none;
+}
+
+.powerbi-card:fullscreen .section-heading {
+  margin-bottom: 12px;
+}
+
+.powerbi-card:fullscreen .powerbi-frame-shell {
+  height: 100%;
+  min-height: 0;
+  border-radius: 12px;
+}
+
+.powerbi-card:fullscreen .powerbi-frame {
+  min-height: 0;
+}
+
 .powerbi-stack {
   display: grid;
   gap: 20px;
