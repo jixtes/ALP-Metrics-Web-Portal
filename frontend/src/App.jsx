@@ -1671,7 +1671,7 @@ function App() {
 
           <div className="run-panel">
             <button type="button" onClick={() => setCurrentView("dashboard")}>
-              Back to dashboard
+              <span aria-hidden="true">⌂</span> Back to home
             </button>
             <button type="button" className="secondary-button" onClick={handleLogout}>
               Log out
