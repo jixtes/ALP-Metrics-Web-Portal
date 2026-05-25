@@ -1164,6 +1164,29 @@ tbody tr:hover,
   background: rgba(24, 60, 54, 0.08);
 }
 
+.role-project-picker-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.role-project-picker-item {
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.role-project-picker-item input {
+  margin-top: 1px;
+}
+
+.role-project-picker-item strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .powerbi-refresh-button {
   width: fit-content;
   min-height: 36px;
@@ -1268,6 +1291,12 @@ tbody tr:hover,
   .survey-split-column-list,
   .survey-split-column-list .table-wrap {
     transition: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .role-project-picker-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1452,5 +1481,11 @@ tbody tr:hover,
 
   .settings-actions button {
     width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .role-project-picker-list {
+    grid-template-columns: 1fr;
   }
 }

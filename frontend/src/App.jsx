@@ -1682,7 +1682,7 @@ function App() {
           <div className="hero-copy">
             <p className="eyebrow">Workspace configuration</p>
             <h1>Settings</h1>
-            <p className="hero-text">Manage dashboard visibility, user access, and future workspace controls.</p>
+            <p className="hero-text">Manage profile info, access, dashboards, and data sources.</p>
           </div>
 
           <div className="run-panel">
@@ -2182,14 +2182,16 @@ function App() {
                     </div>
 
                     {roleForm.projectScope === "restricted" ? (
-                      <div className="report-picker-list">
+                      <div className="report-picker-list role-project-picker-list">
                         {projectOptions.length === 0 ? <div className="table-empty">No projects are available yet.</div> : null}
                         {projectOptions.map((projectRef) => {
                           const isChecked = roleForm.allowedProjectRefs.includes(projectRef);
                           return (
                             <label
                               key={projectRef}
-                              className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}
+                              className={`report-picker-item role-project-picker-item${
+                                isChecked ? " report-picker-item-active" : ""
+                              }`}
                             >
                               <input
                                 type="checkbox"
