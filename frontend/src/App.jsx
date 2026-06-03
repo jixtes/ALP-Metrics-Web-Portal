@@ -34,7 +34,6 @@ const surveyColumns = [
 const uploadColumns = [
   { key: "file_name", label: "File", type: "text" },
   { key: "folder", label: "Folder", type: "text" },
-  { key: "status", label: "Status", type: "text" },
   { key: "web_url", label: "Link", type: "text" },
   { key: "uploaded_at", label: "Uploaded", type: "date" },
 ];
@@ -3247,13 +3246,13 @@ function App() {
                       <tbody>
                         {paginatedUploads.map((item) => (
                           <tr key={item.id}>
-                            <td data-label="File">{item.file_name}</td>
-                            <td data-label="Folder">{item.folder}</td>
-                            <td data-label="Status">
+                            <td data-label="File" className="upload-file-cell">
+                              <span className="upload-file-name">{item.file_name}</span>
                               <span className={`status-tag status-tag-${String(item.status || "unknown").toLowerCase()}`}>
                                 {item.status || "N/A"}
                               </span>
                             </td>
+                            <td data-label="Folder">{item.folder}</td>
                             <td data-label="Link">
                               {item.web_url ? (
                                 <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">

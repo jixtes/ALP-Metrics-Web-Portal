@@ -768,6 +768,21 @@ td {
   white-space: nowrap;
 }
 
+.upload-file-cell {
+  display: grid;
+  gap: 7px;
+  max-width: 360px;
+  white-space: normal;
+}
+
+.upload-file-name {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
+}
+
 th {
   font-size: 0.82rem;
   text-transform: uppercase;
