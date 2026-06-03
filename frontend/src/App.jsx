@@ -189,12 +189,6 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function scrollToPageTop() {
-  window.requestAnimationFrame(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  });
-}
-
 function EmbeddedPowerBIReport({ report }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
@@ -367,6 +361,8 @@ function toFriendlyLoginError(error) {
 }
 
 function App() {
+  const userFormRef = useRef(null);
+  const roleFormRef = useRef(null);
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -511,6 +507,18 @@ function App() {
     }
     return canManageUsers;
   });
+
+  function scrollToUserForm() {
+    window.requestAnimationFrame(() => {
+      userFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function scrollToRoleForm() {
+    window.requestAnimationFrame(() => {
+      roleFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   useEffect(() => {
     setProfileForm({
@@ -1193,7 +1201,7 @@ function App() {
     });
     setUsersError("");
     setUsersMessage("");
-    scrollToPageTop();
+    scrollToUserForm();
   }
 
   function handleProfileChange(field, value) {
@@ -1258,6 +1266,7 @@ function App() {
     });
     setRolesError("");
     setRolesMessage("");
+    scrollToRoleForm();
   }
 
   async function handleSaveProfile(event) {
@@ -1489,7 +1498,7 @@ function App() {
         expiresAt: data.expiresAt,
       });
       setUsersMessage(`Issued a password reset link for ${user.email}.`);
-      scrollToPageTop();
+      scrollToUserForm();
     } catch (issueError) {
       setUsersError(issueError.message);
       setIssuedResetLink(null);
@@ -2058,7 +2067,7 @@ function App() {
                   ) : null}
 
                   {isUserFormVisible ? (
-                    <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
+                    <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate ref={userFormRef}>
                     {editingUserId ? (
                       <div className="user-form-danger-row">
                         <button
@@ -2421,7 +2430,7 @@ function App() {
                   ) : null}
 
                   {isRoleFormVisible ? (
-                    <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate>
+                    <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate ref={roleFormRef}>
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="role-name">
