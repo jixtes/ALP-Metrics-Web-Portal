@@ -2807,7 +2807,7 @@ function App() {
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell dashboard-shell">
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">Survey data management</p>

@@ -48,6 +48,11 @@ select {
   padding: 32px 20px 48px;
 }
 
+.dashboard-shell {
+  max-width: 1280px;
+  padding-top: 24px;
+}
+
 .login-shell {
   min-height: 100vh;
   display: grid;
@@ -163,6 +168,12 @@ select {
   border-radius: 16px;
   padding: 22px;
   margin-bottom: 16px;
+}
+
+.dashboard-shell .hero-card {
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 14px;
 }
 
 .eyebrow {
@@ -442,10 +453,20 @@ select {
   padding: 18px 20px 18px 24px;
 }
 
+.dashboard-shell .stat-card {
+  border-radius: 18px;
+  padding: 14px 16px 14px 18px;
+}
+
 .stat-card strong {
   display: block;
   margin-top: 8px;
   font-size: 1.8rem;
+}
+
+.dashboard-shell .stat-card strong {
+  margin-top: 6px;
+  font-size: 1.55rem;
 }
 
 .content-grid {
@@ -503,6 +524,10 @@ select {
   align-self: start;
 }
 
+.dashboard-shell .survey-split-column {
+  padding: 20px;
+}
+
 .survey-split-column-preview {
   border-right: 1px solid rgba(19, 33, 32, 0.08);
 }
@@ -541,6 +566,10 @@ select {
   gap: 18px;
 }
 
+.dashboard-shell .tab-shell {
+  gap: 14px;
+}
+
 .tab-row {
   display: flex;
   flex-wrap: wrap;
@@ -559,6 +588,12 @@ select {
   cursor: pointer;
 }
 
+.dashboard-shell .tab-button {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 0.92rem;
+}
+
 .tab-button-active {
   border-color: rgba(24, 60, 54, 0.28);
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
@@ -573,6 +608,15 @@ select {
 .detail-card {
   border-radius: 28px;
   padding: 24px;
+}
+
+.dashboard-shell .detail-card {
+  border-radius: 22px;
+  padding: 20px;
+}
+
+.dashboard-shell .survey-split-panel {
+  padding: 0;
 }
 
 .column-card:first-child {
