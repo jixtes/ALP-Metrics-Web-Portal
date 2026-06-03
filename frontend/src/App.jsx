@@ -651,6 +651,9 @@ function App() {
       return;
     }
 
+    setIsPowerBILoading(true);
+    setPowerBIError("");
+
     try {
       const reportsData = await apiRequest("/api/powerbi/reports");
       const reports = reportsData.reports ?? [];
@@ -673,6 +676,8 @@ function App() {
     } catch (loadError) {
       setAvailableReports([]);
       setPowerBIError(loadError.message);
+    } finally {
+      setIsPowerBILoading(false);
     }
   }
 
