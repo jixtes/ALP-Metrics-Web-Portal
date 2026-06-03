@@ -38,6 +38,7 @@ from .service import (
 def _current_powerbi_identity(preview: dict | None = None) -> tuple[str | None, list[str] | None]:
     username = getattr(current_user, "email", None)
     if preview:
+        username = preview.get("user", {}).get("email") or username
         return username, [preview["role"]["name"]]
     roles = sorted({role.name for role in getattr(current_user, "roles", []) if getattr(role, "name", None)})
     return username, roles or None
