@@ -998,14 +998,12 @@ tbody tr:hover,
   margin-top: 4px;
 }
 
-.insight-stack {
+.module-insight-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
   gap: 12px;
+  align-items: stretch;
   margin-bottom: 16px;
-}
-
-.insight-stack-two {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .detail-section-block {
@@ -1044,7 +1042,6 @@ tbody tr:hover,
 .module-strip {
   display: grid;
   gap: 10px;
-  margin-bottom: 16px;
   padding: 14px 16px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.55);
@@ -1593,7 +1590,7 @@ tbody tr:hover,
     border-top: 1px solid rgba(19, 33, 32, 0.08);
   }
 
-  .insight-stack-two {
+  .module-insight-row {
     grid-template-columns: 1fr;
   }
 

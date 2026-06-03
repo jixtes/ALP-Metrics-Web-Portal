@@ -1774,7 +1774,6 @@ function App() {
     };
   });
   const uniqueEnumerators = selectedPreview.active_enumerator_count ?? 0;
-  const uniqueEntityTypes = selectedPreview.entity_type_count ?? 0;
   const entityTypeTotals = formatList(selectedPreview.entity_type_totals ?? selectedPreview.most_entity_types ?? []);
   const mostTargetGroups = formatList(selectedPreview.most_target_groups ?? []);
   const enabledModules = buildEnabledModules(selectedSurvey);
@@ -2961,8 +2960,8 @@ function App() {
                         <strong>{uniqueEnumerators || "N/A"}</strong>
                       </div>
                       <div>
-                        <span>Entity types covered</span>
-                        <strong>{uniqueEntityTypes || "N/A"}</strong>
+                        <span>Total entity types</span>
+                        <strong>{entityTypeTotals}</strong>
                       </div>
                     </div>
 
@@ -3000,31 +2999,22 @@ function App() {
                       </div>
                     </div>
 
-                    {enabledModules.length > 0 ? (
-                      <div className="module-strip">
-                        <span className="module-label">Add-ons</span>
-                        <div className="module-chips">
-                          {enabledModules.map((moduleName) => (
-                            <span key={moduleName} className="module-chip">
-                              {moduleName}
-                            </span>
-                          ))}
+                    <div className="module-insight-row">
+                      {enabledModules.length > 0 ? (
+                        <div className="module-strip">
+                          <span className="module-label">Add-ons</span>
+                          <div className="module-chips">
+                            {enabledModules.map((moduleName) => (
+                              <span key={moduleName} className="module-chip">
+                                {moduleName}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-
-                    <div className="insight-stack insight-stack-two">
-                      <div>
-                        <div className="insight-card">
-                          <span>Total entity types</span>
-                          <strong>{entityTypeTotals}</strong>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="insight-card">
-                          <span>Most target groups</span>
-                          <strong>{mostTargetGroups}</strong>
-                        </div>
+                      ) : null}
+                      <div className="insight-card">
+                        <span>Most target groups</span>
+                        <strong>{mostTargetGroups}</strong>
                       </div>
                     </div>
 
