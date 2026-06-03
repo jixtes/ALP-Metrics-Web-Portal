@@ -3041,6 +3041,7 @@ function App() {
 
                     <div className="detail-section-block">
                       <hr className="survey-preview-divider" />
+                      <br />
                       <div className="detail-section-heading">
                         <p>Daily entity type and enumerator contributions for recent active days.</p>
                         {dailySubmissionRows.length > 0 ? (
