@@ -16,6 +16,7 @@ from .auth import (
     current_user_upload_access,
     init_auth,
     role_access_preview,
+    user_access_preview,
 )
 from .database import (
     fetch_dashboard,
@@ -111,6 +112,10 @@ def create_app() -> Flask:
         if latest_run and latest_run.get("pipeline_commit_after"):
             latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after")))
         if preview:
+            dashboard_data["accessPreview"] = {
+                "role": preview["role"],
+                "user": preview.get("user"),
+            }
             dashboard_data["rolePreview"] = preview["role"]
         return jsonify(dashboard_data)
 
@@ -433,13 +438,24 @@ def _filter_project_file_uploads(
 
 
 def _role_preview_from_request() -> tuple[dict | None, str | None]:
+    if "userPreviewId" in request.args:
+        try:
+            user_id = int(request.args.get("userPreviewId", ""))
+        except ValueError:
+            return None, "Invalid user preview."
+        preview = user_access_preview(user_id)
+        if not preview:
+            return None, "User preview is only available to admins for non-admin users."
+        return preview, None
+
     if "rolePreviewId" not in request.args:
         return None, None
     try:
         role_id = int(request.args.get("rolePreviewId", ""))
     except ValueError:
         return None, "Invalid role preview."
-    preview = role_access_preview(role_id)
+    allowed_project_refs = request.args.getlist("projectRef")
+    preview = role_access_preview(role_id, allowed_project_refs)
     if not preview:
         return None, "Role preview is only available to admins for non-admin roles."
     return preview, None

@@ -33,6 +33,7 @@ class Role(db.Model, fsqla.FsRoleMixin):
 
 class User(db.Model, fsqla.FsUserMixin):
     full_name = db.Column(db.String(255), nullable=True)
+    allowed_project_refs_json = db.Column(db.Text, nullable=False, default="[]")
 
 
 class PasswordResetToken(db.Model):
@@ -362,6 +363,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             active=True,
             roles=[role],
             full_name=full_name,
+            allowed_project_refs_json=json.dumps(_clean_string_list(payload.get("allowedProjectRefs"))),
         )
         db.session.commit()
         return jsonify({"user": _serialize_user(user)}), 201
@@ -396,6 +398,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         user.email = email
         user.full_name = full_name
         user.roles = [role]
+        user.allowed_project_refs_json = json.dumps(_clean_string_list(payload.get("allowedProjectRefs")))
         db.session.commit()
         return jsonify({"user": _serialize_user(user)})
 
@@ -484,6 +487,7 @@ def _serialize_user(user: User | None) -> dict | None:
         "roles": sorted(role.name for role in user.roles),
         "primaryRole": primary_role.name if primary_role else None,
         "uploadScope": primary_role.upload_scope if primary_role else "all",
+        "allowedProjectRefs": _load_json_list(user.allowed_project_refs_json),
     }
 
 
@@ -517,7 +521,7 @@ def _validate_password(password: str) -> str | None:
 
 
 def _ensure_auth_schema() -> None:
-    columns = {
+    role_columns = {
         row[1]
         for row in db.session.execute(text("PRAGMA table_info(role)")).fetchall()
     }
@@ -528,9 +532,17 @@ def _ensure_auth_schema() -> None:
         ("allowed_project_refs_json", "TEXT NOT NULL DEFAULT '[]'", "[]"),
         ("allowed_report_ids_json", "TEXT NOT NULL DEFAULT '[]'", "[]"),
     ]:
-        if column_name not in columns:
+        if column_name not in role_columns:
             db.session.execute(text(f"ALTER TABLE role ADD COLUMN {column_name} {column_type}"))
             db.session.execute(text(f"UPDATE role SET {column_name} = :value WHERE {column_name} IS NULL"), {"value": default_value})
+
+    user_columns = {
+        row[1]
+        for row in db.session.execute(text("PRAGMA table_info(user)")).fetchall()
+    }
+    if "allowed_project_refs_json" not in user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN allowed_project_refs_json TEXT NOT NULL DEFAULT '[]'"))
+        db.session.execute(text("UPDATE user SET allowed_project_refs_json = '[]' WHERE allowed_project_refs_json IS NULL"))
     db.session.commit()
 
 
@@ -577,10 +589,13 @@ def _primary_role(user: User | None) -> Role | None:
 
 
 def current_user_project_access() -> tuple[str, set[str]]:
-    role = _primary_role(current_user if current_user.is_authenticated else None)
+    user = current_user if current_user.is_authenticated else None
+    role = _primary_role(user)
     if not role or role.name == "admin":
         return "all", set()
-    return role.project_scope or "all", set(_load_json_list(role.allowed_project_refs_json))
+    if (role.project_scope or "all") != "restricted":
+        return "all", set()
+    return "restricted", set(_load_json_list(user.allowed_project_refs_json))
 
 
 def current_user_report_access() -> tuple[str, set[str]]:
@@ -603,7 +618,7 @@ def current_user_is_admin() -> bool:
     return any(role.name == "admin" for role in current_user.roles)
 
 
-def role_access_preview(role_id: int | None) -> dict | None:
+def role_access_preview(role_id: int | None, allowed_project_refs: list[str] | None = None) -> dict | None:
     if not role_id or not current_user_is_admin():
         return None
 
@@ -611,10 +626,32 @@ def role_access_preview(role_id: int | None) -> dict | None:
     if not role or role.name == "admin":
         return None
 
+    project_scope = role.project_scope or "all"
     return {
         "role": _serialize_role(role),
-        "project_scope": role.project_scope or "all",
-        "allowed_project_refs": set(_load_json_list(role.allowed_project_refs_json)),
+        "project_scope": project_scope,
+        "allowed_project_refs": set(_clean_string_list(allowed_project_refs)) if project_scope == "restricted" else set(),
+        "report_scope": role.report_scope or "all",
+        "allowed_report_ids": set(_load_json_list(role.allowed_report_ids_json)),
+        "upload_scope": role.upload_scope or "all",
+    }
+
+
+def user_access_preview(user_id: int | None) -> dict | None:
+    if not user_id or not current_user_is_admin():
+        return None
+
+    user = User.query.get(user_id)
+    role = _primary_role(user)
+    if not user or not role or role.name == "admin":
+        return None
+
+    project_scope = role.project_scope or "all"
+    return {
+        "role": _serialize_role(role),
+        "user": _serialize_user(user),
+        "project_scope": project_scope,
+        "allowed_project_refs": set(_load_json_list(user.allowed_project_refs_json)) if project_scope == "restricted" else set(),
         "report_scope": role.report_scope or "all",
         "allowed_report_ids": set(_load_json_list(role.allowed_report_ids_json)),
         "upload_scope": role.upload_scope or "all",

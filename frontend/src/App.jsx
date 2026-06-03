@@ -4,6 +4,8 @@ import ifcLogo from "./assets/ifc-logo.svg";
 
 const RESET_PASSWORD_PATH = "/reset-password";
 const POWERBI_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.9/dist/powerbi.js";
+const SETTINGS_TABLE_PAGE_SIZE = 8;
+const DASHBOARD_TABLE_PAGE_SIZE = 10;
 
 const emptyDashboard = {
   latest_run: null,
@@ -87,8 +89,9 @@ function formatUploadScope(scope) {
   return scope === "all" ? "Visible" : "Hidden";
 }
 
-function rolePreviewQuery(rolePreviewId) {
-  return rolePreviewId ? `?rolePreviewId=${encodeURIComponent(rolePreviewId)}` : "";
+function accessPreviewQuery(accessPreviewParams) {
+  const query = accessPreviewParams?.toString() ?? "";
+  return query ? `?${query}` : "";
 }
 
 function compareSurveyValues(left, right, type) {
@@ -374,8 +377,10 @@ function App() {
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
   const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
+  const [surveyPage, setSurveyPage] = useState(1);
   const [uploadFilter, setUploadFilter] = useState("");
   const [uploadFolderFilter, setUploadFolderFilter] = useState("");
+  const [uploadPage, setUploadPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({
     key: "last_submission_at",
     direction: "desc",
@@ -426,6 +431,7 @@ function App() {
   const [rolesError, setRolesError] = useState("");
   const [rolesMessage, setRolesMessage] = useState("");
   const [roleSearch, setRoleSearch] = useState("");
+  const [rolePage, setRolePage] = useState(1);
   const [isRoleFormVisible, setIsRoleFormVisible] = useState(false);
   const [isRolesLoading, setIsRolesLoading] = useState(false);
   const [isSavingRole, setIsSavingRole] = useState(false);
@@ -445,6 +451,7 @@ function App() {
   const [usersMessage, setUsersMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState("");
+  const [userPage, setUserPage] = useState(1);
   const [isUserFormVisible, setIsUserFormVisible] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -455,6 +462,7 @@ function App() {
     fullName: "",
     role: "viewer",
     password: "",
+    allowedProjectRefs: [],
   });
   const [issuedResetLink, setIssuedResetLink] = useState(null);
   const [copiedResetLink, setCopiedResetLink] = useState(false);
@@ -471,20 +479,23 @@ function App() {
   const [isResetValidating, setIsResetValidating] = useState(false);
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [isResetComplete, setIsResetComplete] = useState(false);
-  const rolePreviewId = new URLSearchParams(window.location.search).get("rolePreviewId") ?? "";
+  const accessPreviewParams = new URLSearchParams(window.location.search);
+  const rolePreviewId = accessPreviewParams.get("rolePreviewId") ?? "";
+  const userPreviewId = accessPreviewParams.get("userPreviewId") ?? "";
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
   const isAuthenticated = Boolean(authUser);
   const userRoles = authUser?.roles ?? [];
   const isAdmin = userRoles.includes("admin");
-  const previewRoleName = dashboard.rolePreview?.name ?? "";
-  const isRolePreview = isAdmin && Boolean(rolePreviewId) && Boolean(previewRoleName);
-  const previewUploadScope = dashboard.rolePreview?.uploadScope;
-  const canManageUsers = isAdmin && !isRolePreview;
-  const canManagePowerBI = isAdmin && !isRolePreview;
-  const canManagePipeline = isAdmin && !isRolePreview;
-  const canRunPipeline = isAuthenticated && !isRolePreview;
-  const canSeeUploads = isRolePreview ? previewUploadScope !== "none" : canManageUsers || (authUser?.uploadScope ?? "all") !== "none";
+  const previewRoleName = dashboard.accessPreview?.role?.name ?? dashboard.rolePreview?.name ?? "";
+  const previewUserEmail = dashboard.accessPreview?.user?.email ?? "";
+  const isAccessPreview = isAdmin && Boolean(rolePreviewId || userPreviewId) && Boolean(previewRoleName);
+  const previewUploadScope = dashboard.accessPreview?.role?.uploadScope ?? dashboard.rolePreview?.uploadScope;
+  const canManageUsers = isAdmin && !isAccessPreview;
+  const canManagePowerBI = isAdmin && !isAccessPreview;
+  const canManagePipeline = isAdmin && !isAccessPreview;
+  const canRunPipeline = isAuthenticated && !isAccessPreview;
+  const canSeeUploads = isAccessPreview ? previewUploadScope !== "none" : canManageUsers || (authUser?.uploadScope ?? "all") !== "none";
   const visibleSettingsSections = settingsSections.filter((section) => {
     if (section.key === "profile") {
       return true;
@@ -575,7 +586,7 @@ function App() {
     setError("");
 
     try {
-      const data = await apiRequest(`/api/dashboard${rolePreviewQuery(rolePreviewId)}`);
+      const data = await apiRequest(`/api/dashboard${accessPreviewQuery(accessPreviewParams)}`);
       setDashboard(data);
       const preferredSurveyExists = (data.surveys ?? []).some((survey) => survey.id === preferredSurveyId);
       setSelectedSurveyId(preferredSurveyExists ? preferredSurveyId : null);
@@ -596,8 +607,8 @@ function App() {
 
     try {
       const [selectionsData, embedsData] = await Promise.all([
-        apiRequest(`/api/powerbi/selections${rolePreviewQuery(rolePreviewId)}`),
-        apiRequest(`/api/powerbi/embed-configs${rolePreviewQuery(rolePreviewId)}`),
+        apiRequest(`/api/powerbi/selections${accessPreviewQuery(accessPreviewParams)}`),
+        apiRequest(`/api/powerbi/embed-configs${accessPreviewQuery(accessPreviewParams)}`),
       ]);
 
       const selectedIds = (selectionsData.reports ?? []).map((report) => report.report_id);
@@ -812,6 +823,22 @@ function App() {
     canManagePipeline,
     savedReportIds,
   ]);
+
+  useEffect(() => {
+    setUserPage(1);
+  }, [userSearch, userRoleFilter]);
+
+  useEffect(() => {
+    setRolePage(1);
+  }, [roleSearch]);
+
+  useEffect(() => {
+    setSurveyPage(1);
+  }, [surveyFilter, surveyPhaseFilter, sortConfig.key, sortConfig.direction]);
+
+  useEffect(() => {
+    setUploadPage(1);
+  }, [uploadFilter, uploadFolderFilter, uploadSortConfig.key, uploadSortConfig.direction]);
 
   function handleCredentialsChange(field, value) {
     setLoginMessage("");
@@ -1055,6 +1082,7 @@ function App() {
       fullName: "",
       role: roles[0]?.name ?? "viewer",
       password: "",
+      allowedProjectRefs: [],
     });
   }
 
@@ -1065,6 +1093,7 @@ function App() {
       fullName: "",
       role: roles[0]?.name ?? "viewer",
       password: "",
+      allowedProjectRefs: [],
     });
     setUsersError("");
     setUsersMessage("");
@@ -1079,6 +1108,7 @@ function App() {
       fullName: user.fullName || "",
       role: user.primaryRole || user.roles[0] || roles[0]?.name || "viewer",
       password: "",
+      allowedProjectRefs: user.allowedProjectRefs ?? [],
     });
     setUsersError("");
     setUsersMessage("");
@@ -1124,6 +1154,18 @@ function App() {
 
   function handleRoleFieldChange(field, value) {
     setRoleForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function toggleUserProjectAccess(projectRef) {
+    setNewUserForm((current) => {
+      const currentValues = current.allowedProjectRefs ?? [];
+      return {
+        ...current,
+        allowedProjectRefs: currentValues.includes(projectRef)
+          ? currentValues.filter((item) => item !== projectRef)
+          : [...currentValues, projectRef],
+      };
+    });
   }
 
   function toggleRoleListValue(field, value) {
@@ -1274,7 +1316,15 @@ function App() {
   }
 
   function openRolePreview(role) {
-    window.open(`/?rolePreviewId=${encodeURIComponent(role.id)}`, "_blank", "noopener,noreferrer");
+    const params = new URLSearchParams({ rolePreviewId: String(role.id) });
+    if (role.projectScope === "restricted") {
+      projectOptions.forEach((projectRef) => params.append("projectRef", projectRef));
+    }
+    window.open(`/?${params.toString()}`, "_blank", "noopener,noreferrer");
+  }
+
+  function openUserPreview(user) {
+    window.open(`/?userPreviewId=${encodeURIComponent(user.id)}`, "_blank", "noopener,noreferrer");
   }
 
   async function handleCreateUser(event) {
@@ -1314,6 +1364,7 @@ function App() {
             email: emailValue,
             fullName: newUserForm.fullName,
             role: newUserForm.role,
+            allowedProjectRefs: newUserForm.allowedProjectRefs,
           }
         : {
             ...newUserForm,
@@ -1456,6 +1507,12 @@ function App() {
     const comparison = compareSurveyValues(left[column.key], right[column.key], column.type);
     return sortConfig.direction === "asc" ? comparison : -comparison;
   });
+  const surveyPageCount = Math.max(1, Math.ceil(sortedSurveys.length / DASHBOARD_TABLE_PAGE_SIZE));
+  const activeSurveyPage = Math.min(surveyPage, surveyPageCount);
+  const paginatedSurveys = sortedSurveys.slice(
+    (activeSurveyPage - 1) * DASHBOARD_TABLE_PAGE_SIZE,
+    activeSurveyPage * DASHBOARD_TABLE_PAGE_SIZE,
+  );
   const normalizedUploadFilter = uploadFilter.trim().toLowerCase();
   const uploadsWithFolders = dashboard.uploads.map((item) => ({
     ...item,
@@ -1481,6 +1538,12 @@ function App() {
     const comparison = compareSurveyValues(leftValue, rightValue, column.type);
     return uploadSortConfig.direction === "asc" ? comparison : -comparison;
   });
+  const uploadPageCount = Math.max(1, Math.ceil(sortedUploads.length / DASHBOARD_TABLE_PAGE_SIZE));
+  const activeUploadPage = Math.min(uploadPage, uploadPageCount);
+  const paginatedUploads = sortedUploads.slice(
+    (activeUploadPage - 1) * DASHBOARD_TABLE_PAGE_SIZE,
+    activeUploadPage * DASHBOARD_TABLE_PAGE_SIZE,
+  );
   const userRoleOptions = Array.from(
     new Set([
       ...roles.map((role) => role.name),
@@ -1492,7 +1555,7 @@ function App() {
   const filteredUsers = users.filter((user) => {
     const matchesText =
       !normalizedUserFilter ||
-      [user.email, user.fullName, user.primaryRole, ...(user.roles ?? [])]
+      [user.email, user.fullName, user.primaryRole, ...(user.roles ?? []), ...(user.allowedProjectRefs ?? [])]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedUserFilter));
     const matchesRole =
@@ -1503,6 +1566,12 @@ function App() {
 
     return matchesText && matchesRole;
   });
+  const userPageCount = Math.max(1, Math.ceil(filteredUsers.length / SETTINGS_TABLE_PAGE_SIZE));
+  const activeUserPage = Math.min(userPage, userPageCount);
+  const paginatedUsers = filteredUsers.slice(
+    (activeUserPage - 1) * SETTINGS_TABLE_PAGE_SIZE,
+    activeUserPage * SETTINGS_TABLE_PAGE_SIZE,
+  );
   const normalizedRoleFilter = roleSearch.trim().toLowerCase();
   const filteredRoles = roles.filter((role) => {
     if (!normalizedRoleFilter) {
@@ -1514,12 +1583,17 @@ function App() {
       role.projectScope,
       role.reportScope,
       role.uploadScope,
-      ...(role.allowedProjectRefs ?? []),
       ...(role.allowedReportIds ?? []),
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedRoleFilter));
   });
+  const rolePageCount = Math.max(1, Math.ceil(filteredRoles.length / SETTINGS_TABLE_PAGE_SIZE));
+  const activeRolePage = Math.min(rolePage, rolePageCount);
+  const paginatedRoles = filteredRoles.slice(
+    (activeRolePage - 1) * SETTINGS_TABLE_PAGE_SIZE,
+    activeRolePage * SETTINGS_TABLE_PAGE_SIZE,
+  );
 
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
   const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => survey.project_ref).filter(Boolean)).size;
@@ -1570,6 +1644,8 @@ function App() {
   const projectOptions = [...new Set(dashboard.surveys.map((survey) => survey.survey_name).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right),
   );
+  const selectedUserRole = roles.find((role) => role.name === newUserForm.role) ?? null;
+  const isUserProjectSpecific = selectedUserRole?.projectScope === "restricted";
   const activeSettings =
     visibleSettingsSections.find((section) => section.key === activeSettingsSection) ?? visibleSettingsSections[0];
   const dashboardTabs = [
@@ -1939,6 +2015,32 @@ function App() {
                       </select>
                     </div>
 
+                    {isUserProjectSpecific ? (
+                      <div className="report-picker-list role-project-picker-list">
+                        {projectOptions.length === 0 ? <div className="table-empty">No projects are available yet.</div> : null}
+                        {projectOptions.map((projectRef) => {
+                          const isChecked = newUserForm.allowedProjectRefs.includes(projectRef);
+                          return (
+                            <label
+                              key={projectRef}
+                              className={`report-picker-item role-project-picker-item${
+                                isChecked ? " report-picker-item-active" : ""
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleUserProjectAccess(projectRef)}
+                              />
+                              <div>
+                                <strong>{projectRef}</strong>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="new-user-password">
                         Temporary password
@@ -2042,15 +2144,21 @@ function App() {
                             <th>Email</th>
                             <th>Name</th>
                             <th>Role</th>
+                            <th>Projects</th>
                             <th>Action</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredUsers.map((user) => (
+                          {paginatedUsers.map((user) => (
                             <tr key={user.id}>
                               <td data-label="Email">{user.email}</td>
                               <td data-label="Name">{user.fullName || "N/A"}</td>
                               <td data-label="Role">{user.roles.join(", ")}</td>
+                              <td data-label="Projects">
+                                {roles.find((role) => role.name === user.primaryRole)?.projectScope === "restricted"
+                                  ? `${user.allowedProjectRefs?.length ?? 0} selected`
+                                  : "All"}
+                              </td>
                               <td data-label="Action">
                                 <div className="settings-actions">
                                   <button
@@ -2059,6 +2167,14 @@ function App() {
                                     onClick={() => startEditingUser(user)}
                                   >
                                     Edit user
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="secondary-button secondary-button-compact"
+                                    onClick={() => openUserPreview(user)}
+                                    disabled={(user.roles ?? []).includes("admin")}
+                                  >
+                                    Preview access
                                   </button>
                                   <button
                                     type="button"
@@ -2074,6 +2190,31 @@ function App() {
                           ))}
                         </tbody>
                       </table>
+                      {filteredUsers.length > SETTINGS_TABLE_PAGE_SIZE ? (
+                        <div className="table-pagination">
+                          <span>
+                            Page {activeUserPage} of {userPageCount} · {filteredUsers.length} users
+                          </span>
+                          <div className="table-pagination-actions">
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setUserPage((page) => Math.max(1, page - 1))}
+                              disabled={activeUserPage === 1}
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setUserPage((page) => Math.min(userPageCount, page + 1))}
+                              disabled={activeUserPage === userPageCount}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {!isUsersLoading && users.length > 0 && filteredUsers.length === 0 ? (
@@ -2216,35 +2357,9 @@ function App() {
                         onChange={(event) => handleRoleFieldChange("projectScope", event.target.value)}
                       >
                         <option value="all">All projects</option>
-                        <option value="restricted">Restricted projects</option>
+                        <option value="restricted">Project specific</option>
                       </select>
                     </div>
-
-                    {roleForm.projectScope === "restricted" ? (
-                      <div className="report-picker-list role-project-picker-list">
-                        {projectOptions.length === 0 ? <div className="table-empty">No projects are available yet.</div> : null}
-                        {projectOptions.map((projectRef) => {
-                          const isChecked = roleForm.allowedProjectRefs.includes(projectRef);
-                          return (
-                            <label
-                              key={projectRef}
-                              className={`report-picker-item role-project-picker-item${
-                                isChecked ? " report-picker-item-active" : ""
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => toggleRoleListValue("allowedProjectRefs", projectRef)}
-                              />
-                              <div>
-                                <strong>{projectRef}</strong>
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="role-report-scope">
@@ -2346,13 +2461,13 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredRoles.map((role) => (
+                          {paginatedRoles.map((role) => (
                             <tr key={role.id}>
                               <td data-label="Role">
                                 <strong>{role.name}</strong>
                               </td>
                               <td data-label="Projects">
-                                {role.projectScope === "all" ? "All" : `${role.allowedProjectRefs.length} selected`}
+                                {role.projectScope === "all" ? "All" : "Project specific"}
                               </td>
                               <td data-label="Dashboards">
                                 {role.reportScope === "all" ? "All" : `${role.allowedReportIds.length} selected`}
@@ -2369,14 +2484,16 @@ function App() {
 	                                  >
 	                                    Edit
 	                                  </button>
-                                  <button
-                                    type="button"
-                                    className="secondary-button secondary-button-compact"
-                                    onClick={() => openRolePreview(role)}
-                                    disabled={role.isSystem}
-                                  >
-                                    Preview access
-                                  </button>
+                                  {role.projectScope !== "restricted" ? (
+                                    <button
+                                      type="button"
+                                      className="secondary-button secondary-button-compact"
+                                      onClick={() => openRolePreview(role)}
+                                      disabled={role.isSystem}
+                                    >
+                                      Preview access
+                                    </button>
+                                  ) : null}
 	                                  <button
 	                                    type="button"
 	                                    className="secondary-button secondary-button-compact"
@@ -2391,6 +2508,31 @@ function App() {
                           ))}
                         </tbody>
                       </table>
+                      {filteredRoles.length > SETTINGS_TABLE_PAGE_SIZE ? (
+                        <div className="table-pagination">
+                          <span>
+                            Page {activeRolePage} of {rolePageCount} · {filteredRoles.length} roles
+                          </span>
+                          <div className="table-pagination-actions">
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setRolePage((page) => Math.max(1, page - 1))}
+                              disabled={activeRolePage === 1}
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setRolePage((page) => Math.min(rolePageCount, page + 1))}
+                              disabled={activeRolePage === rolePageCount}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {!isRolesLoading && roles.length > 0 && filteredRoles.length === 0 ? (
@@ -2521,11 +2663,15 @@ function App() {
               <strong>{authUser.fullName || authUser.email}</strong>
             </p>
             <p className="run-meta">Role: {previewRoleName || userRoles.join(", ")}</p>
-            {isRolePreview ? <p className="run-meta preview-mode-label">Preview mode</p> : null}
+            {isAccessPreview ? (
+              <p className="run-meta preview-mode-label">
+                Preview mode{previewUserEmail ? `: ${previewUserEmail}` : ""}
+              </p>
+            ) : null}
           </div>
 
           <div className="hero-copy-actions">
-            {!isRolePreview ? (
+            {!isAccessPreview ? (
               <button type="button" className="hero-action-button hero-action-button-muted" onClick={() => setCurrentView("settings")}>
                 Open settings
               </button>
@@ -2533,9 +2679,9 @@ function App() {
             <button
               type="button"
               className="hero-action-button hero-action-button-muted"
-              onClick={isRolePreview ? handleClosePreview : handleLogout}
+              onClick={isAccessPreview ? handleClosePreview : handleLogout}
             >
-              {isRolePreview ? "Close" : "Log out"}
+              {isAccessPreview ? "Close" : "Log out"}
             </button>
           </div>
         </div>
@@ -2820,7 +2966,7 @@ function App() {
                           </tr>
                         </thead>
                         <tbody>
-                          {sortedSurveys.map((survey) => (
+                          {paginatedSurveys.map((survey) => (
                             <tr
                               key={survey.id}
                               className={`survey-list-row${survey.id === selectedSurveyId ? " selected-row" : ""}`}
@@ -2838,6 +2984,31 @@ function App() {
                           ))}
                         </tbody>
                       </table>
+                      {sortedSurveys.length > DASHBOARD_TABLE_PAGE_SIZE ? (
+                        <div className="table-pagination">
+                          <span>
+                            Page {activeSurveyPage} of {surveyPageCount} · {sortedSurveys.length} surveys
+                          </span>
+                          <div className="table-pagination-actions">
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setSurveyPage((page) => Math.max(1, page - 1))}
+                              disabled={activeSurveyPage === 1}
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={() => setSurveyPage((page) => Math.min(surveyPageCount, page + 1))}
+                              disabled={activeSurveyPage === surveyPageCount}
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </section>
@@ -2911,7 +3082,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedUploads.map((item) => (
+                        {paginatedUploads.map((item) => (
                           <tr key={item.id}>
                             <td data-label="File">{item.file_name}</td>
                             <td data-label="Folder">{item.folder}</td>
@@ -2936,6 +3107,31 @@ function App() {
                         ))}
                       </tbody>
                     </table>
+                    {sortedUploads.length > DASHBOARD_TABLE_PAGE_SIZE ? (
+                      <div className="table-pagination">
+                        <span>
+                          Page {activeUploadPage} of {uploadPageCount} · {sortedUploads.length} files
+                        </span>
+                        <div className="table-pagination-actions">
+                          <button
+                            type="button"
+                            className="secondary-button secondary-button-compact"
+                            onClick={() => setUploadPage((page) => Math.max(1, page - 1))}
+                            disabled={activeUploadPage === 1}
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button secondary-button-compact"
+                            onClick={() => setUploadPage((page) => Math.min(uploadPageCount, page + 1))}
+                            disabled={activeUploadPage === uploadPageCount}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </section>

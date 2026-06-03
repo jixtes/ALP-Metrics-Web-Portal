@@ -1263,6 +1263,44 @@ tbody tr:hover,
   cursor: pointer;
 }
 
+.settings-actions .secondary-button-compact {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  line-height: 1.1;
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.table-pagination-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.table-pagination-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.table-pagination-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .settings-placeholder {
   border-radius: 18px;
   padding: 18px;
@@ -1521,6 +1559,15 @@ tbody tr:hover,
 
   .settings-actions button {
     width: 100%;
+  }
+
+  .table-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .table-pagination-actions button {
+    flex: 1;
   }
 }
 
