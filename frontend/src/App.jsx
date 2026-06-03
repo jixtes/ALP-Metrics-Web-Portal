@@ -91,16 +91,19 @@ function formatUploadScope(scope) {
 function uploadStatusDetails(item) {
   const status = String(item.status || "unknown").toLowerCase();
   const label = item.status || "Unknown";
-  const message = item.message || label;
   if (status === "uploaded") {
+    const message = item.message || "Successfully uploaded";
     return { icon: "✓", label, message, tone: "uploaded" };
   }
   if (status === "failed") {
-    return { icon: "!", label, message, tone: "failed" };
+    const message = item.message || "Upload failed";
+    return { icon: "×", label, message, tone: "failed" };
   }
   if (status === "skipped") {
+    const message = item.message || "Upload skipped";
     return { icon: "!", label, message, tone: "skipped" };
   }
+  const message = item.message || label;
   return { icon: "?", label, message, tone: "unknown" };
 }
 
@@ -3269,7 +3272,7 @@ function App() {
                                 <div className="upload-file-row">
                                   <span
                                     className={`upload-status-icon upload-status-icon-${statusDetails.tone}`}
-                                    title={statusDetails.message}
+                                    data-tooltip={statusDetails.message}
                                     aria-label={`${statusDetails.label}: ${statusDetails.message}`}
                                   >
                                     {statusDetails.icon}

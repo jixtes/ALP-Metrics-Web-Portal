@@ -789,6 +789,7 @@ td {
 }
 
 .upload-status-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -800,7 +801,37 @@ td {
   font-size: 0.82rem;
   font-weight: 900;
   line-height: 1;
-  cursor: help;
+  cursor: default;
+}
+
+.upload-status-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 5;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(19, 33, 32, 0.94);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  white-space: normal;
+}
+
+.upload-status-icon:hover::after,
+.upload-status-icon:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .upload-status-icon-uploaded {
