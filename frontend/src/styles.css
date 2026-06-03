@@ -469,6 +469,10 @@ select {
   font-size: 1.55rem;
 }
 
+.dashboard-shell .stat-card .stat-card-relative-time {
+  font-size: 1.25rem;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);

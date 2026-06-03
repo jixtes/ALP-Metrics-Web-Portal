@@ -77,6 +77,30 @@ function formatDateOnly(value) {
   }).format(date);
 }
 
+function formatRelativeSubmissionTime(value) {
+  if (!value) {
+    return "N/A";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const elapsedMs = Date.now() - date.getTime();
+  if (elapsedMs < 60 * 60 * 1000) {
+    return "just now";
+  }
+
+  const elapsedHours = Math.floor(elapsedMs / (60 * 60 * 1000));
+  if (elapsedHours < 24) {
+    return `${elapsedHours} ${elapsedHours === 1 ? "hour" : "hours"} ago`;
+  }
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  return `${elapsedDays} ${elapsedDays === 1 ? "day" : "days"} ago`;
+}
+
 function formatList(items) {
   return items.length > 0 ? items.join(", ") : "N/A";
 }
@@ -2900,7 +2924,7 @@ function App() {
         </article>
         <article className="stat-card">
           <span>Last submission</span>
-          <strong>{formatDate(lastSubmissionAt)}</strong>
+          <strong className="stat-card-relative-time">{formatRelativeSubmissionTime(lastSubmissionAt)}</strong>
         </article>
         <article className="stat-card">
           <span>Reporting dashboards</span>
