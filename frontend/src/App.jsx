@@ -108,6 +108,18 @@ function compareSurveyValues(left, right, type) {
   return String(left ?? "").localeCompare(String(right ?? ""), undefined, { sensitivity: "base" });
 }
 
+function getLatestSurveyId(surveys) {
+  const latestSurvey = [...surveys].sort((left, right) => {
+    const comparison = compareSurveyValues(left.last_submission_at, right.last_submission_at, "date");
+    if (comparison !== 0) {
+      return -comparison;
+    }
+    return compareSurveyValues(left.survey_name, right.survey_name, "text");
+  })[0];
+
+  return latestSurvey?.id ?? null;
+}
+
 function getSharePointFolder(item) {
   const rawPath = item.sharepoint_path || item.local_path || "";
   let normalizedPath = String(rawPath).replaceAll("\\", "/");
@@ -588,15 +600,20 @@ function App() {
     }
   }
 
-  async function loadDashboard(preferredSurveyId = null) {
+  async function loadDashboard(preferredSurveyId) {
     setIsLoading(true);
     setError("");
 
     try {
       const data = await apiRequest(`/api/dashboard${accessPreviewQuery(accessPreviewParams)}`);
       setDashboard(data);
-      const preferredSurveyExists = (data.surveys ?? []).some((survey) => survey.id === preferredSurveyId);
-      setSelectedSurveyId(preferredSurveyExists ? preferredSurveyId : null);
+      const surveys = data.surveys ?? [];
+      const preferredSurveyExists = surveys.some((survey) => survey.id === preferredSurveyId);
+      if (preferredSurveyId === null) {
+        setSelectedSurveyId(null);
+      } else {
+        setSelectedSurveyId(preferredSurveyExists ? preferredSurveyId : getLatestSurveyId(surveys));
+      }
       return data;
     } catch (loadError) {
       setError(loadError.message);
@@ -2891,7 +2908,7 @@ function App() {
                       </div>
                       <button
                         type="button"
-                        className="secondary-button secondary-button-compact"
+                        className="secondary-button secondary-button-compact preview-hide-button"
                         onClick={() => setSelectedSurveyId(null)}
                       >
                         Hide preview
@@ -3025,11 +3042,13 @@ function App() {
                 >
                   <div className="section-heading">
                     <h2>Survey list</h2>
-                    {selectedSurvey ? (
+                    {selectedSurvey && sortedSurveys.length > 1 ? (
                       <p>
                         <span className="inline-instruction">Click another project row</span> to select it and see a quick
                         preview.
                       </p>
+                    ) : selectedSurvey ? (
+                      <p>Showing the latest project activity.</p>
                     ) : (
                       <p>
                         Browse the latest project activity. <span className="inline-instruction">Click a project row</span> to
