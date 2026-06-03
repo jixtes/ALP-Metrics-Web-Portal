@@ -3076,15 +3076,14 @@ function App() {
                     <h2>Survey list</h2>
                     {selectedSurvey && sortedSurveys.length > 1 ? (
                       <p>
-                        <span className="inline-instruction">Click another project row</span> to select it and see a quick
-                        preview.
+                        <span className="inline-instruction">Click another project</span> for a quick preview.
                       </p>
                     ) : selectedSurvey ? (
                       <p>Showing the latest project activity.</p>
                     ) : (
                       <p>
-                        Browse the latest project activity. <span className="inline-instruction">Click a project row</span> to
-                        select it and see a quick preview.
+                        Browse the latest project activity. <span className="inline-instruction">Click on a project</span> for a
+                        quick preview.
                       </p>
                     )}
                   </div>
