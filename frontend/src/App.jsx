@@ -374,6 +374,7 @@ function toFriendlyLoginError(error) {
 
 function App() {
   const settingsSectionHeadingRef = useRef(null);
+  const dashboardTabShellRef = useRef(null);
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -962,6 +963,19 @@ function App() {
 
   function handleClosePreview() {
     window.close();
+  }
+
+  function handleDashboardTabClick(tabKey) {
+    setActiveDashboardTab(tabKey);
+    window.requestAnimationFrame(() => {
+      const tabShell = dashboardTabShellRef.current;
+      if (!tabShell) {
+        return;
+      }
+      const topOffset = 16;
+      const targetTop = tabShell.getBoundingClientRect().top + window.scrollY - topOffset;
+      window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+    });
   }
 
   async function handleRunPipeline() {
@@ -2877,14 +2891,14 @@ function App() {
         </article>
       </section>
 
-      <section className="tab-shell">
+      <section className="tab-shell" ref={dashboardTabShellRef}>
         <div className="tab-row">
           {dashboardTabs.map((tab) => (
             <button
               key={tab.key}
               type="button"
               className={`tab-button${activeDashboardTab === tab.key ? " tab-button-active" : ""}`}
-              onClick={() => setActiveDashboardTab(tab.key)}
+              onClick={() => handleDashboardTabClick(tab.key)}
             >
               {tab.label}
             </button>
