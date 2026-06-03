@@ -2990,8 +2990,6 @@ function App() {
                     </div>
 
                     <div className="detail-section-block">
-                      <hr className="survey-preview-divider" />
-
                       <div className="detail-grid detail-grid-secondary detail-grid-compact">
                         <div>
                           <span>Project ref</span>
