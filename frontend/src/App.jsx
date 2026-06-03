@@ -361,8 +361,7 @@ function toFriendlyLoginError(error) {
 }
 
 function App() {
-  const userFormRef = useRef(null);
-  const roleFormRef = useRef(null);
+  const settingsSectionHeadingRef = useRef(null);
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -508,15 +507,9 @@ function App() {
     return canManageUsers;
   });
 
-  function scrollToUserForm() {
+  function scrollToSettingsSectionHeading() {
     window.requestAnimationFrame(() => {
-      userFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }
-
-  function scrollToRoleForm() {
-    window.requestAnimationFrame(() => {
-      roleFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      settingsSectionHeadingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 
@@ -1059,7 +1052,6 @@ function App() {
       });
       setPowerBIMessage("Power BI landing page selection updated.");
       await loadEmbeddedPowerBIState();
-      setCurrentView("dashboard");
     } catch (saveError) {
       setPowerBIError(saveError.message);
     } finally {
@@ -1201,7 +1193,7 @@ function App() {
     });
     setUsersError("");
     setUsersMessage("");
-    scrollToUserForm();
+    scrollToSettingsSectionHeading();
   }
 
   function handleProfileChange(field, value) {
@@ -1266,7 +1258,7 @@ function App() {
     });
     setRolesError("");
     setRolesMessage("");
-    scrollToRoleForm();
+    scrollToSettingsSectionHeading();
   }
 
   async function handleSaveProfile(event) {
@@ -1498,7 +1490,7 @@ function App() {
         expiresAt: data.expiresAt,
       });
       setUsersMessage(`Issued a password reset link for ${user.email}.`);
-      scrollToUserForm();
+      scrollToSettingsSectionHeading();
     } catch (issueError) {
       setUsersError(issueError.message);
       setIssuedResetLink(null);
@@ -1937,7 +1929,7 @@ function App() {
           </aside>
 
           <section className="settings-content detail-card">
-            <div className="section-heading">
+            <div className="section-heading" ref={settingsSectionHeadingRef}>
               <h2>{activeSettings.label}</h2>
               <p>{activeSettings.description}</p>
             </div>
@@ -2067,7 +2059,7 @@ function App() {
                   ) : null}
 
                   {isUserFormVisible ? (
-                    <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate ref={userFormRef}>
+                    <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
                     {editingUserId ? (
                       <div className="user-form-danger-row">
                         <button
@@ -2250,8 +2242,8 @@ function App() {
                       <table>
                         <thead>
                           <tr>
-                            <th>Email</th>
                             <th>Name</th>
+                            <th>Email</th>
                             <th>Role</th>
                             <th>Projects</th>
                             <th>Action</th>
@@ -2260,8 +2252,10 @@ function App() {
                         <tbody>
                           {paginatedUsers.map((user) => (
                             <tr key={user.id}>
+                              <td data-label="Name">
+                                <strong>{user.fullName || "N/A"}</strong>
+                              </td>
                               <td data-label="Email">{user.email}</td>
-                              <td data-label="Name">{user.fullName || "N/A"}</td>
                               <td data-label="Role">{user.roles.join(", ")}</td>
                               <td data-label="Projects">
                                 {roles.find((role) => role.name === user.primaryRole)?.projectScope === "restricted"
@@ -2430,7 +2424,7 @@ function App() {
                   ) : null}
 
                   {isRoleFormVisible ? (
-                    <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate ref={roleFormRef}>
+                    <form className="powerbi-settings-form" onSubmit={handleSaveRole} noValidate>
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="role-name">
