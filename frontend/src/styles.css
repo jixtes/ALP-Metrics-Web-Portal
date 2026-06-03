@@ -1029,6 +1029,14 @@ tbody tr:hover,
   color: var(--muted);
 }
 
+.survey-preview-divider {
+  width: 100%;
+  height: 1px;
+  margin: 8px 0 0;
+  border: 0;
+  background: rgba(19, 33, 32, 0.1);
+}
+
 .scroll-hint {
   display: inline-flex;
   margin-top: 8px;

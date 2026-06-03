@@ -2992,7 +2992,7 @@ function App() {
                     <div className="detail-section-block">
                       <div className="detail-section-heading">
                         <h3>Project details</h3>
-                        <p>Context linked to the currently selected survey.</p>
+                        <hr className="survey-preview-divider" />
                       </div>
 
                       <div className="detail-grid detail-grid-secondary detail-grid-compact">
@@ -3043,6 +3043,7 @@ function App() {
                     </div>
 
                     <div className="detail-section-block">
+                      <hr className="survey-preview-divider" />
                       <div className="detail-section-heading">
                         <h3>Records per day</h3>
                         <p>Daily entity type and enumerator contributions for recent active days.</p>
