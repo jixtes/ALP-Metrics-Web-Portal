@@ -2990,10 +2990,7 @@ function App() {
                     </div>
 
                     <div className="detail-section-block">
-                      <div className="detail-section-heading">
-                        <h3>Project details</h3>
-                        <hr className="survey-preview-divider" />
-                      </div>
+                      <hr className="survey-preview-divider" />
 
                       <div className="detail-grid detail-grid-secondary detail-grid-compact">
                         <div>
@@ -3045,7 +3042,6 @@ function App() {
                     <div className="detail-section-block">
                       <hr className="survey-preview-divider" />
                       <div className="detail-section-heading">
-                        <h3>Records per day</h3>
                         <p>Daily entity type and enumerator contributions for recent active days.</p>
                         {dailySubmissionRows.length > 0 ? (
                           <span className="scroll-hint">{dailySubmissionRows.length} active days</span>
