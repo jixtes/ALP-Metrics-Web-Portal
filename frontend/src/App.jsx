@@ -18,7 +18,7 @@ const settingsSections = [
   { key: "pipeline", label: "Pipeline", description: "Update pipeline code and inspect the latest run logs." },
   { key: "users", label: "Manage users", description: "Create users and issue password reset links." },
   { key: "roles", label: "Manage user roles", description: "Create, update, and delete non-admin roles and access rules." },
-  { key: "powerbi", label: "Add Power BI dashboards", description: "Choose which reports appear on the landing page." },
+  { key: "powerbi", label: "Power BI dashboards", description: "Choose which reports appear on the landing page." },
 ];
 
 const surveyColumns = [
@@ -2734,7 +2734,7 @@ function App() {
 
                   <div className="settings-actions">
                     <button type="submit" disabled={isSavingPowerBI}>
-                      {isSavingPowerBI ? "Saving dashboard selection..." : "Save landing page dashboards"}
+                      {isSavingPowerBI ? "Saving dashboard selection..." : "Save changes"}
                     </button>
                     <button
                       type="button"
