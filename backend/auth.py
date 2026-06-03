@@ -402,6 +402,31 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         db.session.commit()
         return jsonify({"user": _serialize_user(user)})
 
+    @app.delete("/api/admin/users/<int:user_id>")
+    @auth_required("session")
+    @roles_required("admin")
+    def delete_user(user_id: int):
+        _require_csrf()
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found."}), 404
+        if user.id == current_user.id:
+            return jsonify({"error": "You cannot delete your own account."}), 400
+
+        role_names = {role.name for role in user.roles}
+        if "admin" in role_names:
+            other_admin_count = User.query.filter(User.id != user.id, User.roles.any(name="admin")).count()
+            if other_admin_count == 0:
+                return jsonify({"error": "Create another admin before deleting this admin user."}), 400
+
+        PasswordResetToken.query.filter(
+            (PasswordResetToken.user_id == user.id) | (PasswordResetToken.created_by_user_id == user.id)
+        ).delete(synchronize_session=False)
+        user.roles = []
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"deleted": True, "userId": user_id})
+
     @app.post("/api/admin/users/<int:user_id>/reset-link")
     @auth_required("session")
     @roles_required("admin")

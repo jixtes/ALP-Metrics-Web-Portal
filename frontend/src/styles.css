@@ -1271,6 +1271,16 @@ tbody tr:hover,
   line-height: 1.1;
 }
 
+.user-form-danger-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.danger-button {
+  background: rgba(183, 63, 44, 0.12) !important;
+  color: #9f3425 !important;
+}
+
 .table-pagination {
   display: flex;
   align-items: center;

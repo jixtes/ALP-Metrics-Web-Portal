@@ -456,6 +456,7 @@ function App() {
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
   const [issuingResetUserId, setIssuingResetUserId] = useState(null);
   const [newUserForm, setNewUserForm] = useState({
     email: "",
@@ -1390,6 +1391,33 @@ function App() {
     }
   }
 
+  async function handleDeleteEditingUser() {
+    if (!editingUserId) {
+      return;
+    }
+    const userLabel = newUserForm.email || "this user";
+    if (!window.confirm(`Delete ${userLabel}? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingUserId(editingUserId);
+    setUsersError("");
+    setUsersMessage("");
+
+    try {
+      const data = await apiRequest(`/api/admin/users/${editingUserId}`, {
+        method: "DELETE",
+      });
+      setUsers((current) => current.filter((user) => user.id !== data.userId));
+      setUsersMessage(`Deleted ${userLabel}.`);
+      resetUserForm();
+    } catch (deleteError) {
+      setUsersError(deleteError.message);
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
   async function handleIssueResetLink(user) {
     setIssuingResetUserId(user.id);
     setUsersError("");
@@ -1972,6 +2000,18 @@ function App() {
 
                   {isUserFormVisible ? (
                     <form className="powerbi-settings-form" onSubmit={handleCreateUser} noValidate>
+                    {editingUserId ? (
+                      <div className="user-form-danger-row">
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button-compact danger-button"
+                          onClick={handleDeleteEditingUser}
+                          disabled={deletingUserId === editingUserId}
+                        >
+                          {deletingUserId === editingUserId ? "Deleting..." : "Delete user"}
+                        </button>
+                      </div>
+                    ) : null}
 
                     <div className="filter-row">
                       <label className="filter-label" htmlFor="new-user-email">
