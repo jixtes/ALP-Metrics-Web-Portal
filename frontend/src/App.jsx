@@ -88,6 +88,22 @@ function formatUploadScope(scope) {
   return scope === "all" ? "Visible" : "Hidden";
 }
 
+function uploadStatusDetails(item) {
+  const status = String(item.status || "unknown").toLowerCase();
+  const label = item.status || "Unknown";
+  const message = item.message || label;
+  if (status === "uploaded") {
+    return { icon: "✓", label, message, tone: "uploaded" };
+  }
+  if (status === "failed") {
+    return { icon: "!", label, message, tone: "failed" };
+  }
+  if (status === "skipped") {
+    return { icon: "!", label, message, tone: "skipped" };
+  }
+  return { icon: "?", label, message, tone: "unknown" };
+}
+
 function accessPreviewQuery(accessPreviewParams) {
   const query = accessPreviewParams?.toString() ?? "";
   return query ? `?${query}` : "";
@@ -3244,31 +3260,39 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {paginatedUploads.map((item) => (
-                          <tr key={item.id}>
-                            <td data-label="File" className="upload-file-cell">
-                              <div className="upload-file-stack">
-                                <span className="upload-file-name">{item.file_name}</span>
-                                <span className={`status-tag status-tag-${String(item.status || "unknown").toLowerCase()}`}>
-                                  {item.status || "N/A"}
-                                </span>
-                              </div>
-                            </td>
-                            <td data-label="Folder">{item.folder}</td>
-                            <td data-label="Link">
-                              {item.web_url ? (
-                                <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
-                                  <span className="sharepoint-link-mark" aria-hidden="true">
+                        {paginatedUploads.map((item) => {
+                          const statusDetails = uploadStatusDetails(item);
+
+                          return (
+                            <tr key={item.id}>
+                              <td data-label="File" className="upload-file-cell">
+                                <div className="upload-file-row">
+                                  <span
+                                    className={`upload-status-icon upload-status-icon-${statusDetails.tone}`}
+                                    title={statusDetails.message}
+                                    aria-label={`${statusDetails.label}: ${statusDetails.message}`}
+                                  >
+                                    {statusDetails.icon}
                                   </span>
-                                  Open in SharePoint
-                                </a>
-                              ) : (
-                                "N/A"
-                              )}
-                            </td>
-                            <td data-label="Uploaded">{formatDate(item.uploaded_at)}</td>
-                          </tr>
-                        ))}
+                                  <span className="upload-file-name">{item.file_name}</span>
+                                </div>
+                              </td>
+                              <td data-label="Folder">{item.folder}</td>
+                              <td data-label="Link">
+                                {item.web_url ? (
+                                  <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
+                                    <span className="sharepoint-link-mark" aria-hidden="true">
+                                    </span>
+                                    Open in SharePoint
+                                  </a>
+                                ) : (
+                                  "N/A"
+                                )}
+                              </td>
+                              <td data-label="Uploaded">{formatDate(item.uploaded_at)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                     {sortedUploads.length > DASHBOARD_TABLE_PAGE_SIZE ? (

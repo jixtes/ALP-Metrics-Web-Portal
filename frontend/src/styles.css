@@ -773,10 +773,10 @@ td {
   white-space: normal;
 }
 
-.upload-file-stack {
-  display: grid;
-  gap: 7px;
-  justify-items: start;
+.upload-file-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   max-width: 360px;
 }
 
@@ -786,6 +786,37 @@ td {
   overflow-wrap: anywhere;
   word-break: normal;
   line-height: 1.35;
+}
+
+.upload-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: help;
+}
+
+.upload-status-icon-uploaded {
+  background: rgba(27, 128, 82, 0.14);
+  color: #146c43;
+}
+
+.upload-status-icon-failed {
+  background: rgba(183, 63, 44, 0.14);
+  color: #b73f2c;
+}
+
+.upload-status-icon-skipped,
+.upload-status-icon-unknown {
+  background: rgba(120, 97, 31, 0.14);
+  color: #78611f;
 }
 
 th {
@@ -838,25 +869,6 @@ tbody tr:hover,
 .survey-list-row:hover td:first-child {
   color: var(--accent);
   font-weight: 700;
-}
-
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(24, 60, 54, 0.08);
-  color: var(--accent);
-  font-size: 0.84rem;
-  font-weight: 700;
-  text-transform: capitalize;
-  white-space: nowrap;
-}
-
-.status-tag-uploaded {
-  background: rgba(27, 128, 82, 0.14);
-  color: #146c43;
 }
 
 .sharepoint-link-button {
