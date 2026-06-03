@@ -1000,7 +1000,7 @@ tbody tr:hover,
 
 .module-insight-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
   margin-bottom: 16px;
@@ -1042,7 +1042,7 @@ tbody tr:hover,
 .module-strip {
   display: grid;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.55);
 }
@@ -1074,7 +1074,7 @@ tbody tr:hover,
 }
 
 .insight-card {
-  padding: 14px 16px;
+  padding: 12px 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.55);
 }
@@ -1085,7 +1085,7 @@ tbody tr:hover,
 
 .insight-card strong {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   line-height: 1.4;
 }
 
