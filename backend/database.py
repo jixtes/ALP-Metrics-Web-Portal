@@ -90,7 +90,9 @@ def initialize_database(db_path: Path) -> None:
                 dataset_id TEXT,
                 embed_url TEXT,
                 display_order INTEGER NOT NULL,
-                selected_at TEXT NOT NULL
+                selected_at TEXT NOT NULL,
+                project_scope TEXT NOT NULL DEFAULT 'all',
+                allowed_project_refs_json TEXT NOT NULL DEFAULT '[]'
             );
             """
         )
@@ -102,6 +104,8 @@ def initialize_database(db_path: Path) -> None:
         _ensure_column(connection, "pipeline_runs", "pipeline_commit_before", "TEXT")
         _ensure_column(connection, "pipeline_runs", "pipeline_commit_after", "TEXT")
         _ensure_column(connection, "pipeline_runs", "run_log", "TEXT")
+        _ensure_column(connection, "powerbi_report_selections", "project_scope", "TEXT NOT NULL DEFAULT 'all'")
+        _ensure_column(connection, "powerbi_report_selections", "allowed_project_refs_json", "TEXT NOT NULL DEFAULT '[]'")
         connection.execute("DELETE FROM survey_records")
         connection.commit()
 
@@ -317,12 +321,13 @@ def fetch_powerbi_report_selections(db_path: Path) -> list[dict[str, Any]]:
     with connect_database(db_path) as connection:
         rows = connection.execute(
             """
-            SELECT id, report_id, report_name, dataset_id, embed_url, display_order, selected_at
+            SELECT id, report_id, report_name, dataset_id, embed_url, display_order, selected_at,
+                   project_scope, allowed_project_refs_json
             FROM powerbi_report_selections
             ORDER BY display_order ASC, id ASC
             """
         ).fetchall()
-        return [_decode_row(row) for row in rows]
+        return [_decode_powerbi_selection(row) for row in rows]
 
 
 def replace_powerbi_report_selections(db_path: Path, selections: list[dict[str, Any]]) -> None:
@@ -331,18 +336,42 @@ def replace_powerbi_report_selections(db_path: Path, selections: list[dict[str, 
         connection.executemany(
             """
             INSERT INTO powerbi_report_selections (
-                report_id, report_name, dataset_id, embed_url, display_order, selected_at
+                report_id, report_name, dataset_id, embed_url, display_order, selected_at,
+                project_scope, allowed_project_refs_json
             ) VALUES (
-                :report_id, :report_name, :dataset_id, :embed_url, :display_order, :selected_at
+                :report_id, :report_name, :dataset_id, :embed_url, :display_order, :selected_at,
+                :project_scope, :allowed_project_refs_json
             )
             """,
-            selections,
+            [
+                {
+                    **selection,
+                    "project_scope": selection.get("project_scope") or "all",
+                    "allowed_project_refs_json": json.dumps(selection.get("allowed_project_refs") or []),
+                }
+                for selection in selections
+            ],
         )
         connection.commit()
 
 
 def _decode_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
+
+
+def _decode_powerbi_selection(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    try:
+        allowed_project_refs = json.loads(item.pop("allowed_project_refs_json") or "[]")
+    except json.JSONDecodeError:
+        allowed_project_refs = []
+    item["allowed_project_refs"] = [
+        str(project_ref).strip()
+        for project_ref in allowed_project_refs
+        if str(project_ref).strip()
+    ] if isinstance(allowed_project_refs, list) else []
+    item["project_scope"] = item.get("project_scope") or "all"
+    return item
 
 
 def _ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:

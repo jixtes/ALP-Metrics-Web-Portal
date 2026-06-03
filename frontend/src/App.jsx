@@ -189,6 +189,12 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
+function scrollToPageTop() {
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
 function EmbeddedPowerBIReport({ report }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
@@ -408,6 +414,8 @@ function App() {
   const [availableReports, setAvailableReports] = useState([]);
   const [selectedPowerBIReports, setSelectedPowerBIReports] = useState([]);
   const [savedReportIds, setSavedReportIds] = useState([]);
+  const [savedPowerBIReportAccess, setSavedPowerBIReportAccess] = useState({});
+  const [powerBIReportAccess, setPowerBIReportAccess] = useState({});
   const [embeddedReports, setEmbeddedReports] = useState([]);
   const [isPowerBILoading, setIsPowerBILoading] = useState(false);
   const [isSavingPowerBI, setIsSavingPowerBI] = useState(false);
@@ -442,8 +450,6 @@ function App() {
     description: "",
     projectScope: "all",
     allowedProjectRefs: [],
-    reportScope: "all",
-    allowedReportIds: [],
     uploadScope: "all",
   });
   const [users, setUsers] = useState([]);
@@ -481,17 +487,16 @@ function App() {
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [isResetComplete, setIsResetComplete] = useState(false);
   const accessPreviewParams = new URLSearchParams(window.location.search);
-  const rolePreviewId = accessPreviewParams.get("rolePreviewId") ?? "";
   const userPreviewId = accessPreviewParams.get("userPreviewId") ?? "";
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
   const isAuthenticated = Boolean(authUser);
   const userRoles = authUser?.roles ?? [];
   const isAdmin = userRoles.includes("admin");
-  const previewRoleName = dashboard.accessPreview?.role?.name ?? dashboard.rolePreview?.name ?? "";
+  const previewRoleName = dashboard.accessPreview?.role?.name ?? "";
   const previewUserEmail = dashboard.accessPreview?.user?.email ?? "";
-  const isAccessPreview = isAdmin && Boolean(rolePreviewId || userPreviewId) && Boolean(previewRoleName);
-  const previewUploadScope = dashboard.accessPreview?.role?.uploadScope ?? dashboard.rolePreview?.uploadScope;
+  const isAccessPreview = isAdmin && Boolean(userPreviewId) && Boolean(previewRoleName);
+  const previewUploadScope = dashboard.accessPreview?.role?.uploadScope;
   const canManageUsers = isAdmin && !isAccessPreview;
   const canManagePowerBI = isAdmin && !isAccessPreview;
   const canManagePipeline = isAdmin && !isAccessPreview;
@@ -613,10 +618,26 @@ function App() {
       ]);
 
       const selectedIds = (selectionsData.reports ?? []).map((report) => report.report_id);
+      const savedAccess = {};
+      (selectionsData.reports ?? []).forEach((report) => {
+        savedAccess[report.report_id] = {
+          projectScope: report.project_scope ?? "all",
+          allowedProjectRefs: report.allowed_project_refs ?? [],
+        };
+      });
       setSavedReportIds(selectedIds);
+      setSavedPowerBIReportAccess(savedAccess);
+      setPowerBIReportAccess((current) => {
+        const nextAccess = { ...current };
+        Object.entries(savedAccess).forEach(([reportId, access]) => {
+          nextAccess[reportId] = access;
+        });
+        return nextAccess;
+      });
       setEmbeddedReports(embedsData.reports ?? []);
     } catch (loadError) {
       setSavedReportIds([]);
+      setSavedPowerBIReportAccess({});
       setEmbeddedReports([]);
       setPowerBIError(loadError.message);
     } finally {
@@ -634,6 +655,16 @@ function App() {
       const reports = reportsData.reports ?? [];
       const validReportIds = new Set(reports.map((report) => report.id).filter(Boolean));
       setAvailableReports(reports);
+      setPowerBIReportAccess((current) => {
+        const nextAccess = {};
+        reports.forEach((report) => {
+          nextAccess[report.id] = current[report.id] ?? {
+            projectScope: "all",
+            allowedProjectRefs: [],
+          };
+        });
+        return nextAccess;
+      });
       setSelectedPowerBIReports((current) => {
         const sourceIds = current.length > 0 ? current : savedReportIds;
         return sourceIds.filter((reportId) => validReportIds.has(reportId));
@@ -769,6 +800,8 @@ function App() {
       setDashboard(emptyDashboard);
       setEmbeddedReports([]);
       setSavedReportIds([]);
+      setSavedPowerBIReportAccess({});
+      setPowerBIReportAccess({});
       setAvailableReports([]);
       setSelectedPowerBIReports([]);
       setSelectedSurveyId(null);
@@ -990,11 +1023,32 @@ function App() {
     try {
       const data = await apiRequest("/api/powerbi/selections", {
         method: "PUT",
-        body: { reportIds: selectedPowerBIReports },
+        body: {
+          reports: selectedPowerBIReports.map((reportId) => ({
+            reportId,
+            projectScope: powerBIReportAccess[reportId]?.projectScope ?? "all",
+            allowedProjectRefs: powerBIReportAccess[reportId]?.allowedProjectRefs ?? [],
+          })),
+        },
       });
       const selectedIds = (data.reports ?? []).map((report) => report.report_id);
+      const savedAccess = {};
+      (data.reports ?? []).forEach((report) => {
+        savedAccess[report.report_id] = {
+          projectScope: report.project_scope ?? "all",
+          allowedProjectRefs: report.allowed_project_refs ?? [],
+        };
+      });
       setSavedReportIds(selectedIds);
+      setSavedPowerBIReportAccess(savedAccess);
       setSelectedPowerBIReports(selectedIds);
+      setPowerBIReportAccess((current) => {
+        const nextAccess = { ...current };
+        Object.entries(savedAccess).forEach(([reportId, access]) => {
+          nextAccess[reportId] = access;
+        });
+        return nextAccess;
+      });
       setPowerBIMessage("Power BI landing page selection updated.");
       await loadEmbeddedPowerBIState();
       setCurrentView("dashboard");
@@ -1071,6 +1125,32 @@ function App() {
     });
   }
 
+  function handlePowerBIReportAccessChange(reportId, projectScope) {
+    setPowerBIReportAccess((current) => ({
+      ...current,
+      [reportId]: {
+        projectScope,
+        allowedProjectRefs: current[reportId]?.allowedProjectRefs ?? [],
+      },
+    }));
+  }
+
+  function togglePowerBIReportProject(reportId, projectRef) {
+    setPowerBIReportAccess((current) => {
+      const currentAccess = current[reportId] ?? { projectScope: "all", allowedProjectRefs: [] };
+      const currentRefs = currentAccess.allowedProjectRefs ?? [];
+      return {
+        ...current,
+        [reportId]: {
+          ...currentAccess,
+          allowedProjectRefs: currentRefs.includes(projectRef)
+            ? currentRefs.filter((item) => item !== projectRef)
+            : [...currentRefs, projectRef],
+        },
+      };
+    });
+  }
+
   function handleNewUserChange(field, value) {
     setNewUserForm((current) => ({ ...current, [field]: value }));
   }
@@ -1113,6 +1193,7 @@ function App() {
     });
     setUsersError("");
     setUsersMessage("");
+    scrollToPageTop();
   }
 
   function handleProfileChange(field, value) {
@@ -1131,8 +1212,6 @@ function App() {
       description: "",
       projectScope: "all",
       allowedProjectRefs: [],
-      reportScope: "all",
-      allowedReportIds: [],
       uploadScope: "all",
     });
   }
@@ -1144,8 +1223,6 @@ function App() {
       description: "",
       projectScope: "all",
       allowedProjectRefs: [],
-      reportScope: "all",
-      allowedReportIds: [],
       uploadScope: "all",
     });
     setRolesError("");
@@ -1169,18 +1246,6 @@ function App() {
     });
   }
 
-  function toggleRoleListValue(field, value) {
-    setRoleForm((current) => {
-      const currentValues = current[field] ?? [];
-      return {
-        ...current,
-        [field]: currentValues.includes(value)
-          ? currentValues.filter((item) => item !== value)
-          : [...currentValues, value],
-      };
-    });
-  }
-
   function startEditingRole(role) {
     setIsRoleFormVisible(true);
     setRoleForm({
@@ -1189,8 +1254,6 @@ function App() {
       description: role.description || "",
       projectScope: role.projectScope,
       allowedProjectRefs: role.allowedProjectRefs ?? [],
-      reportScope: role.reportScope,
-      allowedReportIds: role.allowedReportIds ?? [],
       uploadScope: role.uploadScope ?? "all",
     });
     setRolesError("");
@@ -1316,14 +1379,6 @@ function App() {
     }
   }
 
-  function openRolePreview(role) {
-    const params = new URLSearchParams({ rolePreviewId: String(role.id) });
-    if (role.projectScope === "restricted") {
-      projectOptions.forEach((projectRef) => params.append("projectRef", projectRef));
-    }
-    window.open(`/?${params.toString()}`, "_blank", "noopener,noreferrer");
-  }
-
   function openUserPreview(user) {
     window.open(`/?userPreviewId=${encodeURIComponent(user.id)}`, "_blank", "noopener,noreferrer");
   }
@@ -1434,6 +1489,7 @@ function App() {
         expiresAt: data.expiresAt,
       });
       setUsersMessage(`Issued a password reset link for ${user.email}.`);
+      scrollToPageTop();
     } catch (issueError) {
       setUsersError(issueError.message);
       setIssuedResetLink(null);
@@ -1609,9 +1665,7 @@ function App() {
       role.name,
       role.description,
       role.projectScope,
-      role.reportScope,
       role.uploadScope,
-      ...(role.allowedReportIds ?? []),
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedRoleFilter));
@@ -1674,6 +1728,11 @@ function App() {
   );
   const selectedUserRole = roles.find((role) => role.name === newUserForm.role) ?? null;
   const isUserProjectSpecific = selectedUserRole?.projectScope === "restricted";
+  const projectSpecificPowerBIReports = availableReports.filter(
+    (report) =>
+      selectedPowerBIReports.includes(report.id) &&
+      (powerBIReportAccess[report.id]?.projectScope ?? "all") === "restricted",
+  );
   const activeSettings =
     visibleSettingsSections.find((section) => section.key === activeSettingsSection) ?? visibleSettingsSections[0];
   const dashboardTabs = [
@@ -2063,6 +2122,7 @@ function App() {
                           return (
                             <label
                               key={projectRef}
+                              title={projectRef}
                               className={`report-picker-item role-project-picker-item${
                                 isChecked ? " report-picker-item-active" : ""
                               }`}
@@ -2402,47 +2462,6 @@ function App() {
                     </div>
 
                     <div className="filter-row">
-                      <label className="filter-label" htmlFor="role-report-scope">
-                        Power BI access
-                      </label>
-                      <select
-                        id="role-report-scope"
-                        value={roleForm.reportScope}
-                        onChange={(event) => handleRoleFieldChange("reportScope", event.target.value)}
-                      >
-                        <option value="all">All dashboards</option>
-                        <option value="restricted">Restricted dashboards</option>
-                      </select>
-                    </div>
-
-                    {roleForm.reportScope === "restricted" ? (
-                      <div className="report-picker-list role-project-picker-list">
-                        {availableReports.length === 0 ? <div className="table-empty">No dashboards are available yet.</div> : null}
-                        {availableReports.map((report) => {
-                          const isChecked = roleForm.allowedReportIds.includes(report.id);
-                          return (
-                            <label
-                              key={report.id}
-                              className={`report-picker-item role-project-picker-item${
-                                isChecked ? " report-picker-item-active" : ""
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => toggleRoleListValue("allowedReportIds", report.id)}
-                              />
-                              <div>
-                                <strong>{report.name || "Untitled report"}</strong>
-                                <span>{report.id}</span>
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    <div className="filter-row">
                       <label className="filter-label" htmlFor="role-upload-scope">
                         SharePoint uploads access
                       </label>
@@ -2494,7 +2513,6 @@ function App() {
                           <tr>
                             <th>Role</th>
                             <th>Projects</th>
-                            <th>Dashboards</th>
                             <th>Uploads</th>
                             <th>Users</th>
                             <th>Action</th>
@@ -2509,9 +2527,6 @@ function App() {
                               <td data-label="Projects">
                                 {role.projectScope === "all" ? "All" : "Project specific"}
                               </td>
-                              <td data-label="Dashboards">
-                                {role.reportScope === "all" ? "All" : `${role.allowedReportIds.length} selected`}
-                              </td>
                               <td data-label="Uploads">{formatUploadScope(role.uploadScope)}</td>
                               <td data-label="Users">{role.userCount}</td>
                               <td data-label="Action">
@@ -2524,16 +2539,6 @@ function App() {
 	                                  >
 	                                    Edit
 	                                  </button>
-                                  {role.projectScope !== "restricted" ? (
-                                    <button
-                                      type="button"
-                                      className="secondary-button secondary-button-compact"
-                                      onClick={() => openRolePreview(role)}
-                                      disabled={role.isSystem}
-                                    >
-                                      Preview access
-                                    </button>
-                                  ) : null}
 	                                  <button
 	                                    type="button"
 	                                    className="secondary-button secondary-button-compact"
@@ -2610,6 +2615,7 @@ function App() {
                     <div className="report-picker-list">
                       {availableReports.map((report) => {
                         const isChecked = selectedPowerBIReports.includes(report.id);
+                        const reportAccess = powerBIReportAccess[report.id] ?? { projectScope: "all", allowedProjectRefs: [] };
                         return (
                           <label key={report.id} className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}>
                             <input
@@ -2617,37 +2623,109 @@ function App() {
                               checked={isChecked}
                               onChange={() => togglePowerBIReport(report.id)}
                             />
-                            <div>
-                              <strong>{report.name || "Untitled report"}</strong>
-                              <span>{report.id}</span>
-                              <small>{report.datasetId || "No dataset ID"}</small>
-                              {report.latestRefresh ? (
-                                <small>
-                                  Last refresh: {formatDate(report.latestRefresh.endTime || report.latestRefresh.startTime)} (
-                                  {report.latestRefresh.status || "status unavailable"})
-                                </small>
-                              ) : (
-                                <small>Last refresh: unavailable</small>
-                              )}
-                              {report.isEffectiveIdentityRequired ? (
-                                <small>Requires effective identity (RLS) for embedding.</small>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="powerbi-refresh-button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleRefreshPowerBIReport(report);
-                                }}
-                                disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId}
-                              >
-                                {refreshingPowerBIDatasetId === report.datasetId ? "Refreshing..." : "Refresh report"}
-                              </button>
+                            <div className="powerbi-report-layout">
+                              <div className="powerbi-report-details">
+                                <strong>{report.name || "Untitled report"}</strong>
+                                <span>{report.id}</span>
+                                <small>{report.datasetId || "No dataset ID"}</small>
+                                {report.latestRefresh ? (
+                                  <small>
+                                    Last refresh: {formatDate(report.latestRefresh.endTime || report.latestRefresh.startTime)} (
+                                    {report.latestRefresh.status || "status unavailable"})
+                                  </small>
+                                ) : (
+                                  <small>Last refresh: unavailable</small>
+                                )}
+                                {report.isEffectiveIdentityRequired ? (
+                                  <small>Requires effective identity (RLS) for embedding.</small>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="powerbi-refresh-button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleRefreshPowerBIReport(report);
+                                  }}
+                                  disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId}
+                                >
+                                  {refreshingPowerBIDatasetId === report.datasetId ? "Refreshing..." : "Refresh report"}
+                                </button>
+                              </div>
+                              <div className="powerbi-report-access-column" onClick={(event) => event.stopPropagation()}>
+                                <label className="filter-label" htmlFor={`powerbi-access-${report.id}`}>
+                                  Access
+                                </label>
+                                <select
+                                  id={`powerbi-access-${report.id}`}
+                                  value={reportAccess.projectScope}
+                                  onChange={(event) => handlePowerBIReportAccessChange(report.id, event.target.value)}
+                                >
+                                  <option value="all">All projects</option>
+                                  <option value="restricted">Project specific</option>
+                                </select>
+                              </div>
                             </div>
                           </label>
                         );
                       })}
+                    </div>
+                  ) : null}
+
+                  {projectSpecificPowerBIReports.length > 0 ? (
+                    <div className="powerbi-project-access-table-block">
+                      <div className="detail-section-heading">
+                        <h3>Project specific dashboard access</h3>
+                      </div>
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Dashboard</th>
+                              <th>Project surveys</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {projectSpecificPowerBIReports.map((report) => {
+                              const reportAccess = powerBIReportAccess[report.id] ?? { projectScope: "all", allowedProjectRefs: [] };
+                              return (
+                                <tr key={report.id}>
+                                  <td data-label="Dashboard">
+                                    <strong>{report.name || "Untitled report"}</strong>
+                                    <span className="powerbi-table-report-id">{report.id}</span>
+                                  </td>
+                                  <td data-label="Project surveys">
+                                    <div className="report-picker-list role-project-picker-list powerbi-project-picker-list">
+                                      {projectOptions.length === 0 ? <div className="table-empty">No projects are available yet.</div> : null}
+                                      {projectOptions.map((projectRef) => {
+                                        const isProjectChecked = reportAccess.allowedProjectRefs.includes(projectRef);
+                                        return (
+                                          <label
+                                            key={projectRef}
+                                            title={projectRef}
+                                            className={`report-picker-item role-project-picker-item${
+                                              isProjectChecked ? " report-picker-item-active" : ""
+                                            }`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={isProjectChecked}
+                                              onChange={() => togglePowerBIReportProject(report.id, projectRef)}
+                                            />
+                                            <div>
+                                              <strong>{projectRef}</strong>
+                                            </div>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   ) : null}
 
@@ -2658,7 +2736,10 @@ function App() {
                     <button
                       type="button"
                       className="secondary-button"
-                      onClick={() => setSelectedPowerBIReports(savedReportIds)}
+                      onClick={() => {
+                        setSelectedPowerBIReports(savedReportIds);
+                        setPowerBIReportAccess((current) => ({ ...current, ...savedPowerBIReportAccess }));
+                      }}
                     >
                       Reset to saved selection
                     </button>

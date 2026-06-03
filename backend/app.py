@@ -12,10 +12,8 @@ from powerbi.client import PowerBIClient, PowerBIConfig
 
 from .auth import (
     current_user_project_access,
-    current_user_report_access,
     current_user_upload_access,
     init_auth,
-    role_access_preview,
     user_access_preview,
 )
 from .database import (
@@ -87,7 +85,7 @@ def create_app() -> Flask:
     @app.get("/api/dashboard")
     @auth_required("session")
     def dashboard():
-        preview, preview_error = _role_preview_from_request()
+        preview, preview_error = _user_preview_from_request()
         if preview_error:
             return jsonify({"error": preview_error}), 403
         dashboard_data = fetch_dashboard(db_path)
@@ -117,7 +115,6 @@ def create_app() -> Flask:
                 "role": preview["role"],
                 "user": preview.get("user"),
             }
-            dashboard_data["rolePreview"] = preview["role"]
         return jsonify(dashboard_data)
 
     @app.get("/api/surveys/<int:survey_id>/records")
@@ -260,12 +257,10 @@ def create_app() -> Flask:
     @auth_required("session")
     def powerbi_selections():
         selections = fetch_powerbi_report_selections(db_path)
-        preview, preview_error = _role_preview_from_request()
+        preview, preview_error = _user_preview_from_request()
         if preview_error:
             return jsonify({"error": preview_error}), 403
-        report_scope, allowed_report_ids = _report_access(preview)
-        if report_scope == "restricted":
-            selections = [report for report in selections if report.get("report_id") in allowed_report_ids]
+        selections = _filter_powerbi_selections_for_access(selections, preview)
         return jsonify({"reports": selections})
 
     @app.put("/api/powerbi/selections")
@@ -273,16 +268,27 @@ def create_app() -> Flask:
     @roles_required("admin")
     def update_powerbi_selections():
         payload = request.get_json(silent=True) or {}
-        report_ids = payload.get("reportIds")
-        if not isinstance(report_ids, list) or not all(isinstance(item, str) and item.strip() for item in report_ids):
-            return jsonify({"error": "reportIds must be a list of report ID strings."}), 400
+        report_payloads = payload.get("reports")
+        if isinstance(report_payloads, list):
+            requested_reports = report_payloads
+        else:
+            report_ids = payload.get("reportIds")
+            if not isinstance(report_ids, list):
+                return jsonify({"error": "reports must be a list."}), 400
+            requested_reports = [{"reportId": report_id} for report_id in report_ids]
 
         try:
             config = PowerBIConfig.from_env()
             client = PowerBIClient(config)
             reports = client.list_reports()
             report_lookup = {str(report.get("id")): report for report in reports if report.get("id")}
-            valid_report_ids = [report_id for report_id in report_ids if report_id in report_lookup]
+            valid_report_payloads = []
+            for report_payload in requested_reports:
+                if not isinstance(report_payload, dict):
+                    continue
+                report_id = str(report_payload.get("reportId") or report_payload.get("report_id") or "").strip()
+                if report_id in report_lookup:
+                    valid_report_payloads.append(report_payload)
 
             timestamp = datetime.now(tz=timezone.utc).isoformat()
             selections = [
@@ -293,8 +299,11 @@ def create_app() -> Flask:
                     "embed_url": report_lookup[report_id].get("embedUrl"),
                     "display_order": index,
                     "selected_at": timestamp,
+                    "project_scope": _powerbi_project_scope(report_payload),
+                    "allowed_project_refs": _clean_string_list(report_payload.get("allowedProjectRefs")),
                 }
-                for index, report_id in enumerate(valid_report_ids)
+                for index, report_payload in enumerate(valid_report_payloads)
+                for report_id in [str(report_payload.get("reportId") or report_payload.get("report_id") or "").strip()]
             ]
             replace_powerbi_report_selections(db_path, selections)
             return jsonify({"reports": fetch_powerbi_report_selections(db_path)})
@@ -331,12 +340,10 @@ def create_app() -> Flask:
             config = PowerBIConfig.from_env()
             client = PowerBIClient(config)
             selections = fetch_powerbi_report_selections(db_path)
-            preview, preview_error = _role_preview_from_request()
+            preview, preview_error = _user_preview_from_request()
             if preview_error:
                 return jsonify({"error": preview_error}), 403
-            report_scope, allowed_report_ids = _report_access(preview)
-            if report_scope == "restricted":
-                selections = [report for report in selections if report.get("report_id") in allowed_report_ids]
+            selections = _filter_powerbi_selections_for_access(selections, preview)
             embed_configs = []
             refresh_cache: dict[str, dict | None] = {}
 
@@ -438,27 +445,16 @@ def _filter_project_file_uploads(
     ]
 
 
-def _role_preview_from_request() -> tuple[dict | None, str | None]:
-    if "userPreviewId" in request.args:
-        try:
-            user_id = int(request.args.get("userPreviewId", ""))
-        except ValueError:
-            return None, "Invalid user preview."
-        preview = user_access_preview(user_id)
-        if not preview:
-            return None, "User preview is only available to admins for non-admin users."
-        return preview, None
-
-    if "rolePreviewId" not in request.args:
+def _user_preview_from_request() -> tuple[dict | None, str | None]:
+    if "userPreviewId" not in request.args:
         return None, None
     try:
-        role_id = int(request.args.get("rolePreviewId", ""))
+        user_id = int(request.args.get("userPreviewId", ""))
     except ValueError:
-        return None, "Invalid role preview."
-    allowed_project_refs = request.args.getlist("projectRef")
-    preview = role_access_preview(role_id, allowed_project_refs)
+        return None, "Invalid user preview."
+    preview = user_access_preview(user_id)
     if not preview:
-        return None, "Role preview is only available to admins for non-admin roles."
+        return None, "User preview is only available to admins for non-admin users."
     return preview, None
 
 
@@ -468,16 +464,34 @@ def _project_access(preview: dict | None) -> tuple[str, set[str]]:
     return current_user_project_access()
 
 
-def _report_access(preview: dict | None) -> tuple[str, set[str]]:
-    if preview:
-        return preview["report_scope"], preview["allowed_report_ids"]
-    return current_user_report_access()
-
-
 def _upload_access(preview: dict | None) -> str:
     if preview:
         return preview["upload_scope"]
     return current_user_upload_access()
+
+
+def _filter_powerbi_selections_for_access(selections: list[dict], preview: dict | None) -> list[dict]:
+    project_scope, allowed_project_refs = _project_access(preview)
+    if project_scope != "restricted":
+        return selections
+
+    return [
+        selection
+        for selection in selections
+        if selection.get("project_scope") != "restricted"
+        or allowed_project_refs.intersection(set(selection.get("allowed_project_refs") or []))
+    ]
+
+
+def _powerbi_project_scope(report_payload: dict) -> str:
+    project_scope = str(report_payload.get("projectScope") or report_payload.get("project_scope") or "all").strip().lower()
+    return "restricted" if project_scope == "restricted" else "all"
+
+
+def _clean_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return sorted({str(item).strip() for item in value if str(item).strip()})
 
 
 def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
@@ -494,6 +508,8 @@ def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
             "embed_url": selection.get("embed_url"),
             "display_order": index,
             "selected_at": selection["selected_at"],
+            "project_scope": selection.get("project_scope") or "all",
+            "allowed_project_refs": selection.get("allowed_project_refs") or [],
         }
         for index, selection in enumerate(saved_selections)
         if selection.get("report_id") in current_report_ids

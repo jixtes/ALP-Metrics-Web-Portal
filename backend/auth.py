@@ -643,25 +643,6 @@ def current_user_is_admin() -> bool:
     return any(role.name == "admin" for role in current_user.roles)
 
 
-def role_access_preview(role_id: int | None, allowed_project_refs: list[str] | None = None) -> dict | None:
-    if not role_id or not current_user_is_admin():
-        return None
-
-    role = Role.query.get(role_id)
-    if not role or role.name == "admin":
-        return None
-
-    project_scope = role.project_scope or "all"
-    return {
-        "role": _serialize_role(role),
-        "project_scope": project_scope,
-        "allowed_project_refs": set(_clean_string_list(allowed_project_refs)) if project_scope == "restricted" else set(),
-        "report_scope": role.report_scope or "all",
-        "allowed_report_ids": set(_load_json_list(role.allowed_report_ids_json)),
-        "upload_scope": role.upload_scope or "all",
-    }
-
-
 def user_access_preview(user_id: int | None) -> dict | None:
     if not user_id or not current_user_is_admin():
         return None
