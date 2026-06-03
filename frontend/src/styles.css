@@ -642,7 +642,7 @@ select {
 
 .powerbi-frame-shell {
   height: min(72vh, 760px);
-  min-height: 680px;
+  min-height: 710px;
   border-radius: 24px;
   overflow: hidden;
   border: 1px solid rgba(24, 60, 54, 0.1);
@@ -653,7 +653,7 @@ select {
 .powerbi-frame {
   width: 100%;
   height: 100%;
-  min-height: 680px;
+  min-height: 710px;
 }
 
 .section-heading {
