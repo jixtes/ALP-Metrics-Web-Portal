@@ -616,7 +616,7 @@ select {
 }
 
 .dashboard-shell .survey-split-panel {
-  padding: 0;
+  padding: 16px;
 }
 
 .column-card:first-child {
