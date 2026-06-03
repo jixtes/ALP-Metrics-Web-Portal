@@ -2533,24 +2533,25 @@ function App() {
                               <td data-label="Uploads">{formatUploadScope(role.uploadScope)}</td>
                               <td data-label="Users">{role.userCount}</td>
                               <td data-label="Action">
-                                <div className="settings-actions">
-	                                  <button
-	                                    type="button"
-	                                    className="secondary-button secondary-button-compact"
-	                                    onClick={() => startEditingRole(role)}
-	                                    disabled={role.isSystem}
-	                                  >
-	                                    Edit
-	                                  </button>
-	                                  <button
-	                                    type="button"
-	                                    className="secondary-button secondary-button-compact"
-	                                    onClick={() => handleDeleteRole(role)}
-                                    disabled={role.isSystem || deletingRoleId === role.id}
-                                  >
-                                    {deletingRoleId === role.id ? "Deleting..." : "Delete"}
-                                  </button>
-                                </div>
+                                {!role.isSystem ? (
+                                  <div className="settings-actions">
+                                    <button
+                                      type="button"
+                                      className="secondary-button secondary-button-compact"
+                                      onClick={() => startEditingRole(role)}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="secondary-button secondary-button-compact"
+                                      onClick={() => handleDeleteRole(role)}
+                                      disabled={deletingRoleId === role.id}
+                                    >
+                                      {deletingRoleId === role.id ? "Deleting..." : "Delete"}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </td>
                             </tr>
                           ))}
