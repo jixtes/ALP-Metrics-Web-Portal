@@ -769,10 +769,15 @@ td {
 }
 
 .upload-file-cell {
-  display: grid;
-  gap: 7px;
   max-width: 360px;
   white-space: normal;
+}
+
+.upload-file-stack {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  max-width: 360px;
 }
 
 .upload-file-name {

@@ -3247,10 +3247,12 @@ function App() {
                         {paginatedUploads.map((item) => (
                           <tr key={item.id}>
                             <td data-label="File" className="upload-file-cell">
-                              <span className="upload-file-name">{item.file_name}</span>
-                              <span className={`status-tag status-tag-${String(item.status || "unknown").toLowerCase()}`}>
-                                {item.status || "N/A"}
-                              </span>
+                              <div className="upload-file-stack">
+                                <span className="upload-file-name">{item.file_name}</span>
+                                <span className={`status-tag status-tag-${String(item.status || "unknown").toLowerCase()}`}>
+                                  {item.status || "N/A"}
+                                </span>
+                              </div>
                             </td>
                             <td data-label="Folder">{item.folder}</td>
                             <td data-label="Link">
