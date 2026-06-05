@@ -1580,6 +1580,12 @@ tbody tr:hover,
   }
 }
 
+@media (min-width: 861px) and (max-width: 1600px) {
+  .dashboard-shell {
+    zoom: 0.92;
+  }
+}
+
 @media (max-width: 860px) {
   .hero-card,
   .content-grid,
