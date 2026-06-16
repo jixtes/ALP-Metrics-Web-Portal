@@ -396,22 +396,7 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             allowed_project_refs_json=json.dumps(_clean_string_list(payload.get("allowedProjectRefs"))),
         )
         db.session.commit()
-
-        reset_info = _issue_password_reset_link(user, current_user.id)
-        email_result = send_password_reset_email(
-            recipient=user.email,
-            reset_url=reset_info["reset_url"],
-            expires_at=_to_iso(reset_info["expires_at"]),
-        )
-
-        return jsonify(
-            {
-                "user": _serialize_user(user),
-                "resetUrl": reset_info["reset_url"],
-                "expiresAt": _to_iso(reset_info["expires_at"]),
-                "email": _serialize_email_result(email_result),
-            }
-        ), 201
+        return jsonify({"user": _serialize_user(user)}), 201
 
     @app.patch("/api/admin/users/<int:user_id>")
     @auth_required("session")
