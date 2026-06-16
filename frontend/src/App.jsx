@@ -16,7 +16,7 @@ const emptyDashboard = {
 const settingsSections = [
   { key: "profile", label: "My profile", description: "Update your account details and change your password." },
   { key: "pipeline", label: "Pipeline", description: "Update pipeline code and inspect the latest run logs." },
-  { key: "users", label: "Manage users", description: "Create users and issue password reset links." },
+  { key: "users", label: "Manage users", description: "Create users and send password reset emails." },
   { key: "roles", label: "Manage user roles", description: "Create, update, and delete non-admin roles and access rules." },
   { key: "powerbi", label: "Power BI dashboards", description: "Choose which reports appear on the landing page." },
 ];
@@ -458,6 +458,11 @@ function App() {
       ? "Now login with your new password."
       : ""
   );
+  const [isForgotPasswordVisible, setIsForgotPasswordVisible] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState(
+    new URLSearchParams(window.location.search).get("email") ?? ""
+  );
+  const [isForgotPasswordSending, setIsForgotPasswordSending] = useState(false);
   const [currentView, setCurrentView] = useState("dashboard");
   const [activeSettingsSection, setActiveSettingsSection] = useState("profile");
   const [activeDashboardTab, setActiveDashboardTab] = useState("surveys");
@@ -943,6 +948,9 @@ function App() {
   function handleCredentialsChange(field, value) {
     setLoginMessage("");
     setCredentials((current) => ({ ...current, [field]: value }));
+    if (field === "email") {
+      setForgotPasswordEmail(value);
+    }
   }
 
   async function handleLoginSubmit(event) {
@@ -984,6 +992,49 @@ function App() {
     }
     event.preventDefault();
     event.currentTarget.requestSubmit();
+  }
+
+  function openForgotPassword() {
+    setIsForgotPasswordVisible(true);
+    setLoginError("");
+    setLoginMessage("");
+    setForgotPasswordEmail(credentials.email);
+  }
+
+  function closeForgotPassword() {
+    setIsForgotPasswordVisible(false);
+    setLoginError("");
+  }
+
+  async function handleForgotPasswordSubmit(event) {
+    event.preventDefault();
+    setLoginError("");
+    setLoginMessage("");
+
+    const emailValue = forgotPasswordEmail.trim().toLowerCase();
+    if (!emailValue) {
+      setLoginError("Email is required.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) {
+      setLoginError("Enter a valid email address.");
+      return;
+    }
+
+    setIsForgotPasswordSending(true);
+    try {
+      const data = await apiRequest("/api/auth/forgot-password", {
+        method: "POST",
+        body: { email: emailValue },
+      });
+      setCredentials((current) => ({ ...current, email: emailValue }));
+      setLoginMessage(data.message || "If an active account exists for that email, a password reset email has been sent.");
+      setIsForgotPasswordVisible(false);
+    } catch (forgotError) {
+      setLoginError(toFriendlyLoginError(forgotError));
+    } finally {
+      setIsForgotPasswordSending(false);
+    }
   }
 
   async function handleLogout() {
@@ -1516,7 +1567,23 @@ function App() {
           : [...current, data.user];
         return [...nextUsers].sort((left, right) => left.email.localeCompare(right.email));
       });
-      setUsersMessage(editingUserId ? `Updated ${data.user.email}.` : `Created ${data.user.email}.`);
+      if (editingUserId) {
+        setUsersMessage(`Updated ${data.user.email}.`);
+      } else {
+        setIssuedResetLink({
+          userEmail: data.user.email,
+          resetUrl: data.resetUrl,
+          expiresAt: data.expiresAt,
+          email: data.email,
+        });
+        if (data.email?.sent) {
+          setUsersMessage(`Created ${data.user.email} and sent the password reset email.`);
+        } else if (data.email?.attempted) {
+          setUsersMessage(`Created ${data.user.email}, but the reset email was not sent: ${data.email.error}`);
+        } else {
+          setUsersMessage(`Created ${data.user.email}. Email is not enabled, so copy the reset link below.`);
+        }
+      }
       resetUserForm();
     } catch (createError) {
       setUsersError(createError.message);
@@ -1552,7 +1619,7 @@ function App() {
     }
   }
 
-  async function handleIssueResetLink(user) {
+  async function handleSendResetEmail(user) {
     setIssuingResetUserId(user.id);
     setUsersError("");
     setUsersMessage("");
@@ -1566,8 +1633,15 @@ function App() {
         userEmail: user.email,
         resetUrl: data.resetUrl,
         expiresAt: data.expiresAt,
+        email: data.email,
       });
-      setUsersMessage(`Issued a password reset link for ${user.email}.`);
+      if (data.email?.sent) {
+        setUsersMessage(`Sent a password reset email to ${user.email}.`);
+      } else if (data.email?.attempted) {
+        setUsersMessage(`Created a reset link for ${user.email}, but the email was not sent: ${data.email.error}`);
+      } else {
+        setUsersMessage(`Created a reset link for ${user.email}. Email is not enabled, so copy the link below.`);
+      }
       scrollToSettingsSectionHeading();
     } catch (issueError) {
       setUsersError(issueError.message);
@@ -1893,42 +1967,72 @@ function App() {
             ALP Metrics <span>Portal</span>
           </h1>
 
-          <form className="login-form" onSubmit={handleLoginSubmit} onKeyDown={handleLoginKeyDown} noValidate>
-            {loginMessage ? <p className="login-success">{loginMessage}</p> : null}
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="text"
-              value={credentials.email}
-              onChange={(event) => handleCredentialsChange("email", event.target.value)}
-              autoComplete="username"
-              inputMode="email"
-            />
-
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              value={credentials.password}
-              onChange={(event) => handleCredentialsChange("password", event.target.value)}
-              autoComplete="current-password"
-            />
-
-            <label className="login-checkbox-row" htmlFor="remember">
+          {!isForgotPasswordVisible ? (
+            <form className="login-form" onSubmit={handleLoginSubmit} onKeyDown={handleLoginKeyDown} noValidate>
+              {loginMessage ? <p className="login-success">{loginMessage}</p> : null}
+              <label htmlFor="email">Email</label>
               <input
-                id="remember"
-                type="checkbox"
-                checked={credentials.remember}
-                onChange={(event) => handleCredentialsChange("remember", event.target.checked)}
+                id="email"
+                type="text"
+                value={credentials.email}
+                onChange={(event) => handleCredentialsChange("email", event.target.value)}
+                autoComplete="username"
+                inputMode="email"
               />
-              <span>Remember me</span>
-            </label>
 
-            <button type="submit">Sign in</button>
-            {loginError ? <p className="login-error">{loginError}</p> : null}
-          </form>
+              <label htmlFor="password">Password</label>
+              <input
+                id="password"
+                type="password"
+                value={credentials.password}
+                onChange={(event) => handleCredentialsChange("password", event.target.value)}
+                autoComplete="current-password"
+              />
 
-          <p className="run-note login-forgot-note">Forgot your password? Ask an admin to issue a reset link.</p>
+              <label className="login-checkbox-row" htmlFor="remember">
+                <input
+                  id="remember"
+                  type="checkbox"
+                  checked={credentials.remember}
+                  onChange={(event) => handleCredentialsChange("remember", event.target.checked)}
+                />
+                <span>Remember me</span>
+              </label>
+
+              <button type="submit">Sign in</button>
+              {loginError ? <p className="login-error">{loginError}</p> : null}
+            </form>
+          ) : (
+            <form className="login-form" onSubmit={handleForgotPasswordSubmit} noValidate>
+              {loginMessage ? <p className="login-success">{loginMessage}</p> : null}
+              <label htmlFor="forgot-password-email">Email</label>
+              <input
+                id="forgot-password-email"
+                type="email"
+                value={forgotPasswordEmail}
+                onChange={(event) => {
+                  setLoginMessage("");
+                  setForgotPasswordEmail(event.target.value);
+                }}
+                autoComplete="username"
+                inputMode="email"
+              />
+
+              <button type="submit" disabled={isForgotPasswordSending}>
+                {isForgotPasswordSending ? "Sending..." : "Send reset email"}
+              </button>
+              {loginError ? <p className="login-error">{loginError}</p> : null}
+              <button type="button" className="secondary-button login-secondary-button" onClick={closeForgotPassword}>
+                Back to sign in
+              </button>
+            </form>
+          )}
+
+          {!isForgotPasswordVisible ? (
+            <button type="button" className="login-link-button" onClick={openForgotPassword}>
+              Forgot your password?
+            </button>
+          ) : null}
         </section>
       </main>
     );
@@ -2254,8 +2358,8 @@ function App() {
                   {issuedResetLink ? (
                     <div className="detail-section-block">
                       <div className="detail-section-heading">
-                        <h3>Latest reset link</h3>
-                        <p>Share this link directly with the user.</p>
+                        <h3>Latest reset email</h3>
+                        <p>The email was sent when configured. Use this reset link as a backup.</p>
                       </div>
                       <div className="preview-list">
                         <div className="preview-item">
@@ -2359,10 +2463,10 @@ function App() {
                                   <button
                                     type="button"
                                     className="secondary-button secondary-button-compact"
-                                    onClick={() => handleIssueResetLink(user)}
+                                    onClick={() => handleSendResetEmail(user)}
                                     disabled={issuingResetUserId === user.id}
                                   >
-                                    {issuingResetUserId === user.id ? "Issuing..." : "Issue reset link"}
+                                    {issuingResetUserId === user.id ? "Sending..." : "Send reset password"}
                                   </button>
                                 </div>
                               </td>

@@ -18,6 +18,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf, validate_csrf
 from sqlalchemy import text
 
+from .email_service import EmailResult, send_password_reset_email
+
 db = SQLAlchemy()
 csrf = CSRFProtect()
 fsqla.FsModels.set_db_info(db)
@@ -137,6 +139,32 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
                 "authenticated": True,
                 "user": _serialize_user(user),
                 "csrfToken": generate_csrf(),
+            }
+        )
+
+    @app.post("/api/auth/forgot-password")
+    def forgot_password():
+        _require_csrf()
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email", "")).strip().lower()
+
+        if not email:
+            return jsonify({"error": "Email is required."}), 400
+        if "@" not in email:
+            return jsonify({"error": "Enter a valid email address."}), 400
+
+        user = user_datastore.find_user(email=email)
+        if user and user.active:
+            reset_info = _issue_password_reset_link(user, user.id)
+            send_password_reset_email(
+                recipient=user.email,
+                reset_url=reset_info["reset_url"],
+                expires_at=_to_iso(reset_info["expires_at"]),
+            )
+
+        return jsonify(
+            {
+                "message": "If an active account exists for that email, a password reset email has been sent.",
             }
         )
 
@@ -366,7 +394,22 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             allowed_project_refs_json=json.dumps(_clean_string_list(payload.get("allowedProjectRefs"))),
         )
         db.session.commit()
-        return jsonify({"user": _serialize_user(user)}), 201
+
+        reset_info = _issue_password_reset_link(user, current_user.id)
+        email_result = send_password_reset_email(
+            recipient=user.email,
+            reset_url=reset_info["reset_url"],
+            expires_at=_to_iso(reset_info["expires_at"]),
+        )
+
+        return jsonify(
+            {
+                "user": _serialize_user(user),
+                "resetUrl": reset_info["reset_url"],
+                "expiresAt": _to_iso(reset_info["expires_at"]),
+                "email": _serialize_email_result(email_result),
+            }
+        ), 201
 
     @app.patch("/api/admin/users/<int:user_id>")
     @auth_required("session")
@@ -436,26 +479,19 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         if not user:
             return jsonify({"error": "User not found."}), 404
 
-        plaintext_token = secrets.token_urlsafe(32)
-        now = _utcnow()
-        expires_at = now + timedelta(hours=int(current_app.config["ALP_RESET_LINK_HOURS"]))
-
-        _revoke_other_reset_tokens(user.id)
-        reset_row = PasswordResetToken(
-            token_hash=_hash_token(plaintext_token),
-            user_id=user.id,
-            created_by_user_id=current_user.id,
-            created_at=now,
-            expires_at=expires_at,
+        reset_info = _issue_password_reset_link(user, current_user.id)
+        email_result = send_password_reset_email(
+            recipient=user.email,
+            reset_url=reset_info["reset_url"],
+            expires_at=_to_iso(reset_info["expires_at"]),
         )
-        db.session.add(reset_row)
-        db.session.commit()
 
         return jsonify(
             {
-                "resetUrl": _build_reset_url(plaintext_token),
-                "expiresAt": _to_iso(expires_at),
+                "resetUrl": reset_info["reset_url"],
+                "expiresAt": _to_iso(reset_info["expires_at"]),
                 "user": _serialize_user(user),
+                "email": _serialize_email_result(email_result),
             }
         )
 
@@ -533,6 +569,36 @@ def _serialize_role(role: Role) -> dict:
 
 def _role_user_count(role: Role) -> int:
     return role.users.count() if hasattr(role.users, "count") else len(role.users)
+
+
+def _serialize_email_result(result: EmailResult) -> dict:
+    return {
+        "attempted": result.attempted,
+        "sent": result.sent,
+        "error": result.error,
+    }
+
+
+def _issue_password_reset_link(user: User, created_by_user_id: int) -> dict:
+    plaintext_token = secrets.token_urlsafe(32)
+    now = _utcnow()
+    expires_at = now + timedelta(hours=int(current_app.config["ALP_RESET_LINK_HOURS"]))
+
+    _revoke_other_reset_tokens(user.id)
+    reset_row = PasswordResetToken(
+        token_hash=_hash_token(plaintext_token),
+        user_id=user.id,
+        created_by_user_id=created_by_user_id,
+        created_at=now,
+        expires_at=expires_at,
+    )
+    db.session.add(reset_row)
+    db.session.commit()
+
+    return {
+        "reset_url": _build_reset_url(plaintext_token),
+        "expires_at": expires_at,
+    }
 
 
 def _require_csrf() -> None:

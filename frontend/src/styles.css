@@ -148,6 +148,11 @@ select {
   cursor: pointer;
 }
 
+.login-form button:disabled {
+  cursor: wait;
+  opacity: 0.8;
+}
+
 .login-error {
   margin: 0;
 }
@@ -331,6 +336,19 @@ select {
 
 .login-forgot-note {
   margin-top: 14px;
+}
+
+.login-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .run-panel select,

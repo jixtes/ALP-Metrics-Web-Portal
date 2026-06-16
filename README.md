@@ -89,6 +89,28 @@ To verify Microsoft Graph credentials from the web portal environment:
 python scripts/check_sharepoint_auth.py
 ```
 
+## Password Reset Email
+
+The admin user screen can send password reset emails through Microsoft Graph.
+In Microsoft Entra, grant the app registration Microsoft Graph application
+permission `Mail.Send`, then grant admin consent. Use a dedicated sender mailbox
+such as `notifications@yourdomain.com`.
+
+Configure the portal `.env`:
+
+```env
+MAIL_ENABLED=true
+MAIL_SENDER=notifications@yourdomain.com
+MICROSOFT_TENANT_ID=...
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+```
+
+If email should use a separate Entra app, set `MAIL_TENANT_ID`,
+`MAIL_CLIENT_ID`, and `MAIL_CLIENT_SECRET`; otherwise the Microsoft credentials
+used elsewhere by the portal are reused. Keep `MAIL_ENABLED=false` locally to
+create reset links without sending email.
+
 ## Running Locally
 
 Start the Flask API:
