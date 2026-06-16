@@ -1570,8 +1570,12 @@ function App() {
       });
       if (editingUserId) {
         setUsersMessage(`Updated ${data.user.email}.`);
+      } else if (data.email?.sent) {
+        setUsersMessage(`Created ${data.user.email} and sent the password reset email.`);
+      } else if (data.email?.attempted) {
+        setUsersMessage(`Created ${data.user.email}, but the reset email was not sent: ${data.email.error}`);
       } else {
-        setUsersMessage(`Created ${data.user.email}.`);
+        setUsersMessage(`Created ${data.user.email}. Email is not enabled.`);
       }
       resetUserForm();
     } catch (createError) {
