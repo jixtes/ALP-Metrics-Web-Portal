@@ -519,6 +519,7 @@ function App() {
   const [editingUserId, setEditingUserId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [issuingResetUserId, setIssuingResetUserId] = useState(null);
+  const [emailingResetUserId, setEmailingResetUserId] = useState(null);
   const [newUserForm, setNewUserForm] = useState({
     email: "",
     fullName: "",
@@ -1571,6 +1572,7 @@ function App() {
         setUsersMessage(`Updated ${data.user.email}.`);
       } else {
         setIssuedResetLink({
+          userId: data.user.id,
           userEmail: data.user.email,
           resetUrl: data.resetUrl,
           expiresAt: data.expiresAt,
@@ -1619,7 +1621,7 @@ function App() {
     }
   }
 
-  async function handleSendResetEmail(user) {
+  async function handleGenerateResetLink(user) {
     setIssuingResetUserId(user.id);
     setUsersError("");
     setUsersMessage("");
@@ -1630,24 +1632,54 @@ function App() {
         method: "POST",
       });
       setIssuedResetLink({
+        userId: user.id,
         userEmail: user.email,
         resetUrl: data.resetUrl,
         expiresAt: data.expiresAt,
         email: data.email,
       });
-      if (data.email?.sent) {
-        setUsersMessage(`Sent a password reset email to ${user.email}.`);
-      } else if (data.email?.attempted) {
-        setUsersMessage(`Created a reset link for ${user.email}, but the email was not sent: ${data.email.error}`);
-      } else {
-        setUsersMessage(`Created a reset link for ${user.email}. Email is not enabled, so copy the link below.`);
-      }
+      setUsersMessage(`Created a reset link for ${user.email}. Copy it or send it by email below.`);
       scrollToSettingsSectionHeading();
     } catch (issueError) {
       setUsersError(issueError.message);
       setIssuedResetLink(null);
     } finally {
       setIssuingResetUserId(null);
+    }
+  }
+
+  async function handleSendIssuedResetEmail() {
+    if (!issuedResetLink?.userId || !issuedResetLink?.resetUrl) {
+      return;
+    }
+
+    setEmailingResetUserId(issuedResetLink.userId);
+    setUsersError("");
+    setUsersMessage("");
+
+    try {
+      const data = await apiRequest(`/api/admin/users/${issuedResetLink.userId}/reset-email`, {
+        method: "POST",
+        body: {
+          resetUrl: issuedResetLink.resetUrl,
+          expiresAt: issuedResetLink.expiresAt,
+        },
+      });
+      setIssuedResetLink((current) => ({
+        ...(current ?? {}),
+        email: data.email,
+      }));
+      if (data.email?.sent) {
+        setUsersMessage(`Sent the reset link to ${issuedResetLink.userEmail}.`);
+      } else if (data.email?.attempted) {
+        setUsersMessage(`The reset email was not sent: ${data.email.error}`);
+      } else {
+        setUsersMessage("Email is not enabled. Copy the reset link instead.");
+      }
+    } catch (sendError) {
+      setUsersError(sendError.message);
+    } finally {
+      setEmailingResetUserId(null);
     }
   }
 
@@ -2358,8 +2390,8 @@ function App() {
                   {issuedResetLink ? (
                     <div className="detail-section-block">
                       <div className="detail-section-heading">
-                        <h3>Latest reset email</h3>
-                        <p>The email was sent when configured. Use this reset link as a backup.</p>
+                        <h3>Latest reset link</h3>
+                        <p>Copy this link or send it to the user by email.</p>
                       </div>
                       <div className="preview-list">
                         <div className="preview-item">
@@ -2368,13 +2400,23 @@ function App() {
                             <span>Expires {formatDate(issuedResetLink.expiresAt)}</span>
                           </div>
                           <div className="preview-metadata">
-                            <span>{issuedResetLink.resetUrl}</span>
+                            <span className="reset-link-url">{issuedResetLink.resetUrl}</span>
                             <button
                               type="button"
                               className="secondary-button secondary-button-compact"
                               onClick={handleCopyResetLink}
                             >
                               {copiedResetLink ? "Copied" : "Copy"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button secondary-button-compact"
+                              onClick={handleSendIssuedResetEmail}
+                              disabled={emailingResetUserId === issuedResetLink.userId}
+                            >
+                              {emailingResetUserId === issuedResetLink.userId
+                                ? "Sending..."
+                                : "Send reset link via email"}
                             </button>
                           </div>
                         </div>
@@ -2463,10 +2505,10 @@ function App() {
                                   <button
                                     type="button"
                                     className="secondary-button secondary-button-compact"
-                                    onClick={() => handleSendResetEmail(user)}
+                                    onClick={() => handleGenerateResetLink(user)}
                                     disabled={issuingResetUserId === user.id}
                                   >
-                                    {issuingResetUserId === user.id ? "Sending..." : "Send reset password"}
+                                    {issuingResetUserId === user.id ? "Creating..." : "Reset password"}
                                   </button>
                                 </div>
                               </td>

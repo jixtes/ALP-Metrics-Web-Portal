@@ -7,7 +7,9 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs
 from urllib.parse import quote
+from urllib.parse import urlparse
 
 from flask import Flask, current_app, jsonify, request
 from flask_login import login_user, logout_user
@@ -480,16 +482,44 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
             return jsonify({"error": "User not found."}), 404
 
         reset_info = _issue_password_reset_link(user, current_user.id)
-        email_result = send_password_reset_email(
-            recipient=user.email,
-            reset_url=reset_info["reset_url"],
-            expires_at=_to_iso(reset_info["expires_at"]),
-        )
 
         return jsonify(
             {
                 "resetUrl": reset_info["reset_url"],
                 "expiresAt": _to_iso(reset_info["expires_at"]),
+                "user": _serialize_user(user),
+                "email": _serialize_email_result(EmailResult(attempted=False, sent=False)),
+            }
+        )
+
+    @app.post("/api/admin/users/<int:user_id>/reset-email")
+    @auth_required("session")
+    @roles_required("admin")
+    def send_reset_email(user_id: int):
+        _require_csrf()
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found."}), 404
+
+        payload = request.get_json(silent=True) or {}
+        reset_url = str(payload.get("resetUrl", "")).strip()
+        expires_at = str(payload.get("expiresAt", "")).strip()
+        token = _token_from_reset_url(reset_url)
+        reset_row = _lookup_active_reset_token(token)
+
+        if not reset_url or not token or not reset_row or reset_row.user_id != user.id:
+            return jsonify({"error": "Create a fresh reset link before sending email."}), 400
+
+        email_result = send_password_reset_email(
+            recipient=user.email,
+            reset_url=reset_url,
+            expires_at=expires_at or _to_iso(reset_row.expires_at),
+        )
+
+        return jsonify(
+            {
+                "resetUrl": reset_url,
+                "expiresAt": expires_at or _to_iso(reset_row.expires_at),
                 "user": _serialize_user(user),
                 "email": _serialize_email_result(email_result),
             }
@@ -764,6 +794,13 @@ def _revoke_other_reset_tokens(user_id: int, *, except_id: int | None = None) ->
 def _build_reset_url(plaintext_token: str) -> str:
     origin = request.headers.get("Origin", "").strip() or request.url_root.rstrip("/")
     return f"{origin}/reset-password?token={quote(plaintext_token)}"
+
+
+def _token_from_reset_url(reset_url: str) -> str:
+    if not reset_url:
+        return ""
+    parsed_url = urlparse(reset_url)
+    return parse_qs(parsed_url.query).get("token", [""])[0].strip()
 
 
 def _hash_token(plaintext_token: str) -> str:
