@@ -92,9 +92,9 @@ def _authorize_admin() -> Response | None:
 def _surveycto_config() -> tuple[tuple[str, str, str], None] | tuple[None, Response]:
     pipeline_env = dotenv_values(PIPELINE_ROOT / ".env")
     values = (
-        str(os.getenv("SURVEYCTO_SERVER") or pipeline_env.get("SURVEYCTO_SERVER") or "").strip(),
-        str(os.getenv("SURVEYCTO_USERNAME") or pipeline_env.get("SURVEYCTO_USERNAME") or "").strip(),
-        str(os.getenv("SURVEYCTO_PASSWORD") or pipeline_env.get("SURVEYCTO_PASSWORD") or ""),
+        str(pipeline_env.get("SURVEYCTO_SERVER") or "").strip(),
+        str(pipeline_env.get("SURVEYCTO_USERNAME") or "").strip(),
+        str(pipeline_env.get("SURVEYCTO_PASSWORD") or ""),
     )
     if not all(values):
         return None, _error_response("Survey relay is not configured.", 503)
