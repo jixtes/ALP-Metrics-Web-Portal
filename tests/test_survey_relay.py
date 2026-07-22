@@ -28,23 +28,23 @@ class SurveyRelayTests(unittest.TestCase):
         value = base64.b64encode(b"admin@example.com:admin-password").decode()
         return {"Authorization": f"Basic {value}"}
 
-    @patch("backend.survey_relay.authenticate_active_admin")
+    @patch("backend.survey_relay.authenticate_active_user_with_role")
     @patch("backend.survey_relay.requests.get")
     def test_missing_credentials_are_rejected_without_calling_surveycto(
-        self, request_get: Mock, authenticate_admin: Mock
+        self, request_get: Mock, authenticate_role: Mock
     ) -> None:
         with patch.dict("os.environ", self.env, clear=False):
             response = self.client.get("/api/client/surveys/blfa_farmer_baseline_questionnaire/raw.csv")
 
         self.assertEqual(response.status_code, 401)
         self.assertIn("Basic", response.headers["WWW-Authenticate"])
-        authenticate_admin.assert_not_called()
+        authenticate_role.assert_not_called()
         request_get.assert_not_called()
 
-    @patch("backend.survey_relay.authenticate_active_admin", return_value=True)
+    @patch("backend.survey_relay.authenticate_active_user_with_role", return_value=True)
     @patch("backend.survey_relay.requests.get")
-    def test_valid_admin_streams_the_allow_listed_form_unchanged(
-        self, request_get: Mock, authenticate_admin: Mock
+    def test_valid_api_user_streams_the_allow_listed_form_unchanged(
+        self, request_get: Mock, authenticate_role: Mock
     ) -> None:
         body = b"KEY,project\nabc,BLFA\n"
         upstream = Mock()
@@ -68,11 +68,15 @@ class SurveyRelayTests(unittest.TestCase):
         )
         called_url = request_get.call_args.args[0]
         self.assertTrue(called_url.endswith("/blfa_farmer_baseline_questionnaire"))
-        authenticate_admin.assert_called_once_with("admin@example.com", "admin-password")
+        authenticate_role.assert_called_once_with(
+            "admin@example.com",
+            "admin-password",
+            "raw_data_api_access",
+        )
 
-    @patch("backend.survey_relay.authenticate_active_admin", return_value=True)
+    @patch("backend.survey_relay.authenticate_active_user_with_role", return_value=True)
     @patch("backend.survey_relay.requests.get")
-    def test_upstream_error_is_sanitized(self, request_get: Mock, authenticate_admin: Mock) -> None:
+    def test_upstream_error_is_sanitized(self, request_get: Mock, authenticate_role: Mock) -> None:
         upstream = Mock()
         upstream.status_code = 401
         request_get.return_value = upstream
@@ -87,10 +91,10 @@ class SurveyRelayTests(unittest.TestCase):
         self.assertNotIn("SurveyCTO", response.get_data(as_text=True))
         upstream.close.assert_called_once()
 
-    @patch("backend.survey_relay.authenticate_active_admin")
+    @patch("backend.survey_relay.authenticate_active_user_with_role")
     @patch("backend.survey_relay.requests.get")
     def test_form_outside_environment_allow_list_returns_not_found(
-        self, request_get: Mock, authenticate_admin: Mock
+        self, request_get: Mock, authenticate_role: Mock
     ) -> None:
         with patch.dict("os.environ", self.env, clear=False):
             response = self.client.get(
@@ -99,7 +103,7 @@ class SurveyRelayTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 404)
-        authenticate_admin.assert_not_called()
+        authenticate_role.assert_not_called()
         request_get.assert_not_called()
 
 

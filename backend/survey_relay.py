@@ -9,7 +9,7 @@ from dotenv import dotenv_values
 from flask import Flask, Response, jsonify, request, stream_with_context
 from requests.auth import HTTPBasicAuth
 
-from .auth import authenticate_active_admin
+from .auth import authenticate_active_user_with_role
 from .service import PIPELINE_ROOT
 
 
@@ -84,7 +84,11 @@ def _authorize_admin() -> Response | None:
     credentials = request.authorization
     if not credentials or credentials.type.lower() != "basic":
         return _unauthorized_response()
-    if not authenticate_active_admin(credentials.username or "", credentials.password or ""):
+    if not authenticate_active_user_with_role(
+        credentials.username or "",
+        credentials.password or "",
+        "raw_data_api_access",
+    ):
         return _unauthorized_response()
     return None
 
@@ -102,7 +106,7 @@ def _surveycto_config() -> tuple[tuple[str, str, str], None] | tuple[None, Respo
 
 
 def _unauthorized_response() -> Response:
-    response = _error_response("Valid administrator credentials are required.", 401)
+    response = _error_response("Valid raw data API credentials are required.", 401)
     response.headers["WWW-Authenticate"] = 'Basic realm="ALP Metrics survey relay", charset="UTF-8"'
     return response
 

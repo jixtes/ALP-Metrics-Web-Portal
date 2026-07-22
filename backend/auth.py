@@ -104,7 +104,7 @@ def init_auth(app: Flask) -> None:
     register_auth_routes(app, user_datastore)
 
 
-def authenticate_active_admin(email: str, password: str) -> bool:
+def authenticate_active_user_with_role(email: str, password: str, required_role: str) -> bool:
     normalized_email = str(email or "").strip().lower()
     if not normalized_email or not password:
         return False
@@ -116,9 +116,9 @@ def authenticate_active_admin(email: str, password: str) -> bool:
         db.session.rollback()
         return False
 
-    is_admin = any(role.name == "admin" for role in user.roles)
+    has_required_role = any(role.name == required_role for role in user.roles)
     db.session.commit()
-    return is_admin
+    return has_required_role
 
 
 def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) -> None:
@@ -150,6 +150,10 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         if not verify_and_update_password(password, user):
             db.session.rollback()
             return jsonify({"error": "Invalid email or password."}), 401
+
+        if {role.name for role in user.roles} == {"raw_data_api_access"}:
+            db.session.rollback()
+            return jsonify({"error": "This account is restricted to raw survey API access."}), 403
 
         login_user(user, remember=remember)
         db.session.commit()
@@ -546,9 +550,10 @@ def _bootstrap_roles_and_admin(user_datastore: SQLAlchemyUserDatastore) -> None:
         ("admin", "Full access to ALP Metrics administration."),
         ("operator", "Can run the pipeline and review workspace data."),
         ("viewer", "Read-only access to workspace data."),
+        ("raw_data_api_access", "Can download allow-listed raw SurveyCTO data through the API."),
     ]
     roles_exist = Role.query.first() is not None
-    roles_to_ensure = default_roles if not roles_exist else default_roles[:1]
+    roles_to_ensure = default_roles if not roles_exist else [default_roles[0], default_roles[3]]
     for role_name, description in roles_to_ensure:
         if not user_datastore.find_role(role_name):
             user_datastore.create_role(name=role_name, description=description)
@@ -558,6 +563,12 @@ def _bootstrap_roles_and_admin(user_datastore: SQLAlchemyUserDatastore) -> None:
             role.project_scope = "all"
             role.report_scope = "all"
             role.upload_scope = "all"
+            role.allowed_project_refs_json = "[]"
+            role.allowed_report_ids_json = "[]"
+        elif role.name == "raw_data_api_access":
+            role.project_scope = "restricted"
+            role.report_scope = "restricted"
+            role.upload_scope = "none"
             role.allowed_project_refs_json = "[]"
             role.allowed_report_ids_json = "[]"
 

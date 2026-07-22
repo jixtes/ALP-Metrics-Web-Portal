@@ -147,11 +147,11 @@ GET /api/client/surveys/bayer_safe_handling_baseline_assessment/raw.csv
 GET /api/client/surveys/blfa_farmer_baseline_questionnaire/raw.csv
 ```
 
-Requests use HTTP Basic authentication with an active ALP Metrics portal
-administrator's email address and password:
+Requests use HTTP Basic authentication with an active ALP Metrics user assigned
+the `raw_data_api_access` role:
 
 ```bash
-curl --user 'admin@example.com' \
+curl --user 'client.api@example.com' \
   'https://portal.example.com/api/client/surveys/bayer_safe_handling_baseline_assessment/raw.csv'
 ```
 
@@ -164,9 +164,9 @@ SURVEY_RELAY_ALLOWED_FORMS=bayer_safe_handling_baseline_assessment,blfa_farmer_b
 ```
 
 Requests for form IDs outside this list return `404`. Production must enforce HTTPS,
-because HTTP Basic credentials are included with every request. Create a
-dedicated portal administrator for the client instead of sharing a staff account;
-access can then be revoked by disabling that user or changing its password.
+because HTTP Basic credentials are included with every request. The API role is
+created automatically and is restricted from portal login and normal workspace
+data. Access can be revoked by disabling the user or changing its password.
 
 ## Repository Layout
 
