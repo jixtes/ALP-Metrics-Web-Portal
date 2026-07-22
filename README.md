@@ -137,6 +137,37 @@ npm run build
 
 After that, Flask serves the built app from `frontend/dist`.
 
+## Raw SurveyCTO relay
+
+The backend exposes two allow-listed, read-only CSV relay endpoints for approved
+external clients:
+
+```text
+GET /api/client/surveys/bayer_safe_handling_baseline_assessment/raw.csv
+GET /api/client/surveys/blfa_farmer_baseline_questionnaire/raw.csv
+```
+
+Requests use HTTP Basic authentication with an active ALP Metrics portal
+administrator's email address and password:
+
+```bash
+curl --user 'admin@example.com' \
+  'https://portal.example.com/api/client/surveys/bayer_safe_handling_baseline_assessment/raw.csv'
+```
+
+SurveyCTO credentials are read from the pipeline repository's `.env`, just like
+the notebook. The client never receives them. The form IDs that may be relayed
+are configured as a comma-separated allow-list in the web portal environment:
+
+```env
+SURVEY_RELAY_ALLOWED_FORMS=bayer_safe_handling_baseline_assessment,blfa_farmer_baseline_questionnaire
+```
+
+Requests for form IDs outside this list return `404`. Production must enforce HTTPS,
+because HTTP Basic credentials are included with every request. Create a
+dedicated portal administrator for the client instead of sharing a staff account;
+access can then be revoked by disabling that user or changing its password.
+
 ## Repository Layout
 
 ```text

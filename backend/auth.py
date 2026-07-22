@@ -104,6 +104,23 @@ def init_auth(app: Flask) -> None:
     register_auth_routes(app, user_datastore)
 
 
+def authenticate_active_admin(email: str, password: str) -> bool:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email or not password:
+        return False
+
+    user = User.query.filter_by(email=normalized_email).first()
+    if not user or not user.active:
+        return False
+    if not verify_and_update_password(password, user):
+        db.session.rollback()
+        return False
+
+    is_admin = any(role.name == "admin" for role in user.roles)
+    db.session.commit()
+    return is_admin
+
+
 def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) -> None:
     @app.get("/api/auth/session")
     def auth_session():

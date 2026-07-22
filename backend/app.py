@@ -31,6 +31,7 @@ from .service import (
     pull_pipeline_repo,
     run_pipeline_and_snapshot,
 )
+from .survey_relay import register_survey_relay_routes
 
 
 def _current_powerbi_identity(preview: dict | None = None) -> tuple[str | None, list[str] | None]:
@@ -74,6 +75,7 @@ def create_app() -> Flask:
         instance_path=str(instance_dir),
     )
     init_auth(app)
+    register_survey_relay_routes(app)
 
     db_path = Path(app.config.get("DATABASE_PATH", APP_DB_PATH))
     initialize_database(db_path)
