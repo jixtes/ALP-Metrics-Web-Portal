@@ -98,6 +98,7 @@ def create_app() -> Flask:
         if preview_error:
             return jsonify({"error": preview_error}), 403
         dashboard_data = fetch_dashboard(db_path)
+        dashboard_data["uploads"] = _hide_test_survey_uploads(dashboard_data.get("uploads", []))
         dashboard_data["settings"] = {
             "resetLinkHours": int(app.config["ALP_RESET_LINK_HOURS"]),
         }
@@ -447,11 +448,28 @@ def create_app() -> Flask:
 
 
 PROJECT_DATA_UPLOAD_FOLDER = "pipeline/project_data"
+HIDDEN_TEST_UPLOAD_FOLDERS = {"local_update", "test_survey"}
 PROJECT_FILE_SUFFIXES = (
     "_final_data_with_labels.csv",
     "_final_data.csv",
     ".csv",
 )
+
+
+def _hide_test_survey_uploads(uploads: list[dict]) -> list[dict]:
+    return [upload for upload in uploads if not _is_test_survey_upload(upload)]
+
+
+def _is_test_survey_upload(upload: dict) -> bool:
+    for field_name in ("local_path", "sharepoint_path"):
+        path_parts = {
+            part.casefold()
+            for part in str(upload.get(field_name) or "").replace("\\", "/").split("/")
+            if part
+        }
+        if path_parts.intersection(HIDDEN_TEST_UPLOAD_FOLDERS):
+            return True
+    return False
 
 
 def _filter_project_file_uploads(

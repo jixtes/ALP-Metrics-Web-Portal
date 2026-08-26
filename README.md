@@ -131,7 +131,7 @@ SURVEYCTO_WEBHOOK_SECRET=replace-with-a-long-random-token
 SURVEYCTO_WEBHOOK_DEDUP_SECONDS=300
 SURVEYCTO_WEBHOOK_RESPONDENT_PREFIX=Jigsa Bulto
 SHAREPOINT_INPUT_FOLDER=ALP Metrics/Exports/inputs
-SURVEYCTO_TEST_SHAREPOINT_FOLDER=ALP Metrics/Exports/local_update
+SURVEYCTO_TEST_SHAREPOINT_FOLDER=ALP Metrics/Exports/test_survey
 PORTAL_PUBLIC_URL=https://your-public-portal.example
 INDIVIDUAL_REPORT_NAME=IR_PO_Baseline_v3_test
 POWERBI_REFRESH_TIMEOUT_SECONDS=900
@@ -150,6 +150,10 @@ The individual report embed always sends the authenticated user's email as the
 Power BI effective identity and uses the Power BI role `IR Web Demo User RLS`.
 Portal users with `individual_report_access` are redirected to
 `/individual-report` after login.
+
+Test-survey uploads from the local `files/local_update` workspace and the
+SharePoint `test_survey` folder are excluded from the portal's general Survey
+data files table.
 
 ## Running Locally
 

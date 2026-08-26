@@ -239,7 +239,7 @@ class TestPipelineWorkflowTests(unittest.TestCase):
         with (
             patch.dict(
                 "os.environ",
-                {"SURVEYCTO_TEST_SHAREPOINT_FOLDER": "ALP/ALP Metrics/3. Portal Pipeline/local_update"},
+                {"SURVEYCTO_TEST_SHAREPOINT_FOLDER": "ALP/ALP Metrics/3. Portal Pipeline/test_survey"},
                 clear=False,
             ),
             patch(
@@ -261,7 +261,7 @@ class TestPipelineWorkflowTests(unittest.TestCase):
         self.assertEqual(run_pipeline.call_args.kwargs["extract_mode"], "surveycto_test")
         self.assertEqual(
             run_pipeline.call_args.kwargs["sharepoint_folder"],
-            "ALP/ALP Metrics/3. Portal Pipeline/local_update",
+            "ALP/ALP Metrics/3. Portal Pipeline/test_survey",
         )
         self.assertFalse(run_pipeline.call_args.kwargs["publish_snapshot"])
 

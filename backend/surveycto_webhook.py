@@ -17,7 +17,7 @@ from .email_service import send_report_ready_email, send_report_ready_setup_emai
 from .service import run_pipeline_and_snapshot
 
 
-DEFAULT_TEST_SHAREPOINT_FOLDER = "ALP Metrics/Exports/local_update"
+DEFAULT_TEST_SHAREPOINT_FOLDER = "ALP Metrics/Exports/test_survey"
 DEFAULT_INDIVIDUAL_REPORT_NAME = "IR_PO_Baseline_v3_test"
 DEFAULT_RESPONDENT_NAME_PREFIX = "Jigsa Bulto"
 _state_lock = Lock()
