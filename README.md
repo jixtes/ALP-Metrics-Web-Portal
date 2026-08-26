@@ -130,6 +130,8 @@ portal environment values:
 SURVEYCTO_WEBHOOK_SECRET=replace-with-a-long-random-token
 SURVEYCTO_WEBHOOK_DEDUP_SECONDS=300
 SURVEYCTO_WEBHOOK_RESPONDENT_PREFIX=Jigsa Bulto
+SHAREPOINT_INPUT_FOLDER=ALP Metrics/Exports/inputs
+SURVEYCTO_TEST_SHAREPOINT_FOLDER=ALP Metrics/Exports/local_update
 PORTAL_PUBLIC_URL=https://your-public-portal.example
 INDIVIDUAL_REPORT_NAME=IR_PO_Baseline_v3_test
 POWERBI_REFRESH_TIMEOUT_SECONDS=900
@@ -137,8 +139,8 @@ POWERBI_REFRESH_POLL_SECONDS=5
 ```
 
 The handler responds immediately with HTTP 202, then runs the
-`surveycto_test` pipeline mode, uploads its isolated exports to
-`ALP Metrics/Exports/local_update`, requests a refresh of the report's Power BI
+`surveycto_test` pipeline mode, uploads its isolated exports to the configured
+`SURVEYCTO_TEST_SHAREPOINT_FOLDER`, requests a refresh of the report's Power BI
 semantic model, and waits for a successful refresh. Only then does it create a
 missing account and send the report-ready email. New accounts receive a
 one-time password setup link and the `individual_report_access` role. Existing

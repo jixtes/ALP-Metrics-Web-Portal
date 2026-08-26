@@ -237,6 +237,11 @@ class TestPipelineWorkflowTests(unittest.TestCase):
 
         pipeline_result = {"uploads": [{"status": "uploaded"}]}
         with (
+            patch.dict(
+                "os.environ",
+                {"SURVEYCTO_TEST_SHAREPOINT_FOLDER": "ALP/ALP Metrics/3. Portal Pipeline/local_update"},
+                clear=False,
+            ),
             patch(
                 "backend.surveycto_webhook.run_pipeline_and_snapshot",
                 side_effect=lambda *args, **kwargs: events.append("pipeline") or pipeline_result,
@@ -256,7 +261,7 @@ class TestPipelineWorkflowTests(unittest.TestCase):
         self.assertEqual(run_pipeline.call_args.kwargs["extract_mode"], "surveycto_test")
         self.assertEqual(
             run_pipeline.call_args.kwargs["sharepoint_folder"],
-            "ALP Metrics/Exports/local_update",
+            "ALP/ALP Metrics/3. Portal Pipeline/local_update",
         )
         self.assertFalse(run_pipeline.call_args.kwargs["publish_snapshot"])
 

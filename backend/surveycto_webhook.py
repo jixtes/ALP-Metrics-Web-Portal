@@ -17,7 +17,7 @@ from .email_service import send_report_ready_email, send_report_ready_setup_emai
 from .service import run_pipeline_and_snapshot
 
 
-TEST_SHAREPOINT_FOLDER = "ALP Metrics/Exports/local_update"
+DEFAULT_TEST_SHAREPOINT_FOLDER = "ALP Metrics/Exports/local_update"
 DEFAULT_INDIVIDUAL_REPORT_NAME = "IR_PO_Baseline_v3_test"
 DEFAULT_RESPONDENT_NAME_PREFIX = "Jigsa Bulto"
 _state_lock = Lock()
@@ -71,6 +71,11 @@ def _request_respondent_name() -> str:
 def _portal_origin() -> str:
     configured = os.getenv("PORTAL_PUBLIC_URL", "").strip().rstrip("/")
     return configured or request.url_root.rstrip("/")
+
+
+def _test_sharepoint_folder() -> str:
+    configured = os.getenv("SURVEYCTO_TEST_SHAREPOINT_FOLDER", "").strip().strip("/")
+    return configured or DEFAULT_TEST_SHAREPOINT_FOLDER
 
 
 def _history_key(refresh: dict[str, Any]) -> str:
@@ -146,7 +151,7 @@ def _run_test_pipeline(app: Flask, db_path: Path) -> None:
                     extract_mode="surveycto_test",
                     upload_to_sharepoint=True,
                     publish_snapshot=False,
-                    sharepoint_folder=TEST_SHAREPOINT_FOLDER,
+                    sharepoint_folder=_test_sharepoint_folder(),
                     triggered_by_email="surveycto-webhook",
                     triggered_by_name="SurveyCTO test webhook",
                 )
