@@ -171,6 +171,11 @@ function getSharePointFolder(item) {
   if (graphRootIndex >= 0) {
     normalizedPath = normalizedPath.slice(graphRootIndex + graphRootMarker.length);
   }
+  const portalPipelineMarker = "3. Portal Pipeline/";
+  const portalPipelineIndex = normalizedPath.toLowerCase().indexOf(portalPipelineMarker.toLowerCase());
+  if (portalPipelineIndex >= 0) {
+    normalizedPath = normalizedPath.slice(portalPipelineIndex + portalPipelineMarker.length);
+  }
   const alpMetricsMarker = "ALP Metrics/";
   const alpMetricsIndex = normalizedPath.toLowerCase().indexOf(alpMetricsMarker.toLowerCase());
   if (alpMetricsIndex >= 0) {
