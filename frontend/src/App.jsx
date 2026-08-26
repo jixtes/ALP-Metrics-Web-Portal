@@ -4,6 +4,7 @@ import ifcLogo from "./assets/ifc-logo.svg";
 
 const RESET_PASSWORD_PATH = "/reset-password";
 const POWERBI_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.9/dist/powerbi.js";
+const INDIVIDUAL_REPORT_ROLE = "individual_report_access";
 const SETTINGS_TABLE_PAGE_SIZE = 8;
 const DASHBOARD_TABLE_PAGE_SIZE = 10;
 
@@ -243,7 +244,7 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function EmbeddedPowerBIReport({ report }) {
+function EmbeddedPowerBIReport({ report, showLastRefresh = true }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
   const embeddedReportRef = useRef(null);
@@ -363,7 +364,7 @@ function EmbeddedPowerBIReport({ report }) {
           <h2>{report.reportName || "Power BI dashboard"}</h2>
         </div>
         <div className="powerbi-heading-actions">
-          <span className="powerbi-refresh-meta">Last refresh {formatDate(latestRefreshAt)}</span>
+          {showLastRefresh ? <span className="powerbi-refresh-meta">Last refresh {formatDate(latestRefreshAt)}</span> : null}
           <button
             type="button"
             className="secondary-button"
@@ -472,6 +473,9 @@ function App() {
   const [savedPowerBIReportAccess, setSavedPowerBIReportAccess] = useState({});
   const [powerBIReportAccess, setPowerBIReportAccess] = useState({});
   const [embeddedReports, setEmbeddedReports] = useState([]);
+  const [individualReport, setIndividualReport] = useState(null);
+  const [individualReportError, setIndividualReportError] = useState("");
+  const [isIndividualReportLoading, setIsIndividualReportLoading] = useState(false);
   const [isPowerBILoading, setIsPowerBILoading] = useState(false);
   const [isSavingPowerBI, setIsSavingPowerBI] = useState(false);
   const [refreshingPowerBIDatasetId, setRefreshingPowerBIDatasetId] = useState("");
@@ -546,9 +550,11 @@ function App() {
   const userPreviewId = accessPreviewParams.get("userPreviewId") ?? "";
 
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
+  const isIndividualReportRoute = routePath === "/individual-report";
   const isAuthenticated = Boolean(authUser);
   const userRoles = authUser?.roles ?? [];
   const isAdmin = userRoles.includes("admin");
+  const hasIndividualReportAccess = userRoles.includes(INDIVIDUAL_REPORT_ROLE);
   const previewRoleName = dashboard.accessPreview?.role?.name ?? "";
   const previewUserEmail = dashboard.accessPreview?.user?.email ?? "";
   const isAccessPreview = isAdmin && Boolean(userPreviewId) && Boolean(previewRoleName);
@@ -580,6 +586,13 @@ function App() {
       fullName: authUser?.fullName ?? "",
     });
   }, [authUser?.email, authUser?.fullName]);
+
+  useEffect(() => {
+    if (isAuthenticated && hasIndividualReportAccess && routePath === "/") {
+      window.history.replaceState({}, "", "/individual-report");
+      setRoutePath("/individual-report");
+    }
+  }, [hasIndividualReportAccess, isAuthenticated, routePath]);
 
   useEffect(() => {
     if (!visibleSettingsSections.some((section) => section.key === activeSettingsSection)) {
@@ -712,6 +725,20 @@ function App() {
     }
   }
 
+  async function loadIndividualReport() {
+    setIsIndividualReportLoading(true);
+    setIndividualReportError("");
+    setIndividualReport(null);
+    try {
+      const data = await apiRequest("/api/powerbi/individual-report");
+      setIndividualReport(data);
+    } catch (loadError) {
+      setIndividualReportError(loadError.message);
+    } finally {
+      setIsIndividualReportLoading(false);
+    }
+  }
+
   async function loadPowerBIAdminState() {
     if (!canManagePowerBI) {
       return;
@@ -827,6 +854,10 @@ function App() {
       setResetTokenExpiresAt(data.expiresAt ?? "");
       setResetEmail(data.email ?? "");
     } catch (validationError) {
+      if (validationError.status === 400) {
+        navigateTo("/");
+        return;
+      }
       setResetValidationError(validationError.message);
       setResetTokenExpiresAt("");
       setResetEmail("");
@@ -865,7 +896,9 @@ function App() {
       return;
     }
 
-    if (isAuthenticated) {
+    if (isAuthenticated && isIndividualReportRoute) {
+      loadIndividualReport();
+    } else if (isAuthenticated) {
       loadDashboard();
       loadEmbeddedPowerBIState();
     } else {
@@ -878,7 +911,7 @@ function App() {
       setSelectedPowerBIReports([]);
       setSelectedSurveyId(null);
     }
-  }, [isAuthenticated, isResetRoute]);
+  }, [isAuthenticated, isResetRoute, isIndividualReportRoute]);
 
   useEffect(() => {
     const availableTabs = [
@@ -980,8 +1013,10 @@ function App() {
       setLoginMessage("");
       setCredentials({ email: "", password: "", remember: false });
       setCurrentView("dashboard");
-      setRoutePath("/");
-      window.history.replaceState({}, "", "/");
+      const landingPath =
+        data.user?.roles?.includes(INDIVIDUAL_REPORT_ROLE) || isIndividualReportRoute ? "/individual-report" : "/";
+      setRoutePath(landingPath);
+      window.history.replaceState({}, "", landingPath);
     } catch (submitError) {
       setLoginError(toFriendlyLoginError(submitError));
     }
@@ -2057,6 +2092,33 @@ function App() {
             </button>
           ) : null}
         </section>
+      </main>
+    );
+  }
+
+  if (isIndividualReportRoute) {
+    return (
+      <main className="page-shell dashboard-shell">
+        <section className="hero-card">
+          <div className="hero-copy">
+            <p className="eyebrow">Individual report</p>
+            <h1>
+              ALP Metrics <span>Portal</span>
+            </h1>
+          </div>
+          <div className="run-panel">
+            <button type="button" className="secondary-button" onClick={handleLogout}>
+              Log out
+            </button>
+            <p className="run-note">Signed in as: {authUser.email}</p>
+          </div>
+        </section>
+
+        {isIndividualReportLoading ? <section className="table-empty">Loading your report...</section> : null}
+        {individualReportError ? <section className="alert-card">{individualReportError}</section> : null}
+        {individualReport ? <EmbeddedPowerBIReport report={individualReport} showLastRefresh={false} /> : null}
+
+        <BrandingFooter />
       </main>
     );
   }

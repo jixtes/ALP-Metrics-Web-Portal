@@ -111,6 +111,44 @@ If email should use a separate Entra app, set `MAIL_TENANT_ID`,
 used elsewhere by the portal are reused. Keep `MAIL_ENABLED=false` locally to
 create reset links without sending email.
 
+## SurveyCTO Individual Report Webhook
+
+SurveyCTO can trigger the test-only individual-report workflow with an HTTP
+POST to:
+
+```text
+https://your-public-portal.example/api/webhooks/surveycto?token=YOUR_WEBHOOK_SECRET
+```
+
+The form submission must include `report_user_email` and `resp_name_pl`. JSON,
+nested SurveyCTO JSON (`data.report_user_email`), and form-encoded payloads are
+accepted. Only requests whose `resp_name_pl` begins with the configured prefix
+are processed; other requests receive an HTTP 202 ignored response. Set these
+portal environment values:
+
+```env
+SURVEYCTO_WEBHOOK_SECRET=replace-with-a-long-random-token
+SURVEYCTO_WEBHOOK_DEDUP_SECONDS=300
+SURVEYCTO_WEBHOOK_RESPONDENT_PREFIX=Jigsa Bulto
+PORTAL_PUBLIC_URL=https://your-public-portal.example
+INDIVIDUAL_REPORT_NAME=IR_PO_Baseline_v3_test
+POWERBI_REFRESH_TIMEOUT_SECONDS=900
+POWERBI_REFRESH_POLL_SECONDS=5
+```
+
+The handler responds immediately with HTTP 202, then runs the
+`surveycto_test` pipeline mode, uploads its isolated exports to
+`ALP Metrics/Exports/local_update`, requests a refresh of the report's Power BI
+semantic model, and waits for a successful refresh. Only then does it create a
+missing account and send the report-ready email. New accounts receive a
+one-time password setup link and the `individual_report_access` role. Existing
+accounts and their roles are left unchanged.
+
+The individual report embed always sends the authenticated user's email as the
+Power BI effective identity and uses the Power BI role `IR Web Demo User RLS`.
+Portal users with `individual_report_access` are redirected to
+`/individual-report` after login.
+
 ## Running Locally
 
 Start the Flask API:

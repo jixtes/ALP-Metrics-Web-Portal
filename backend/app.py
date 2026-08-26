@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import re
 from threading import Thread
@@ -32,6 +33,11 @@ from .service import (
     run_pipeline_and_snapshot,
 )
 from .survey_relay import register_survey_relay_routes
+from .surveycto_webhook import register_surveycto_webhook_route
+
+
+INDIVIDUAL_REPORT_NAME = os.getenv("INDIVIDUAL_REPORT_NAME", "IR_PO_Baseline_v3_test").strip()
+INDIVIDUAL_REPORT_RLS_ROLES = ["IR Web Demo User RLS"]
 
 
 def _current_powerbi_identity(preview: dict | None = None) -> tuple[str | None, list[str] | None]:
@@ -79,6 +85,7 @@ def create_app() -> Flask:
 
     db_path = Path(app.config.get("DATABASE_PATH", APP_DB_PATH))
     initialize_database(db_path)
+    register_surveycto_webhook_route(app, db_path)
 
     @app.get("/api/health")
     def healthcheck():
@@ -195,6 +202,32 @@ def create_app() -> Flask:
             client = PowerBIClient(config)
             username, roles = _current_powerbi_identity()
             return jsonify(client.build_embed_config(username=username, roles=roles))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.get("/api/powerbi/individual-report")
+    @auth_required("session")
+    def individual_powerbi_report():
+        try:
+            config = PowerBIConfig.from_env()
+            client = PowerBIClient(config)
+            reports = client.list_reports()
+            report = next((item for item in reports if item.get("name") == INDIVIDUAL_REPORT_NAME), None)
+            if report is None:
+                return jsonify({"error": f"Power BI report '{INDIVIDUAL_REPORT_NAME}' was not found."}), 404
+
+            embed_config = client.build_embed_config(
+                report_id=report["id"],
+                dataset_id=report.get("datasetId"),
+                username=str(current_user.email).strip().lower(),
+                roles=INDIVIDUAL_REPORT_RLS_ROLES,
+            )
+            try:
+                history = client.get_refresh_history(report.get("datasetId"), top=1)
+                latest_refresh = history[0] if history else None
+            except Exception:
+                latest_refresh = None
+            return jsonify({**embed_config, "latestRefresh": latest_refresh, "error": None})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 

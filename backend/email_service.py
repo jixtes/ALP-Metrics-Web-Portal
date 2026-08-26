@@ -61,7 +61,14 @@ class GraphMailClient:
         self.config = config
         self._access_token: str | None = None
 
-    def send_password_reset(self, *, recipient: str, reset_url: str, expires_at: str) -> EmailResult:
+    def send_password_reset(
+        self,
+        *,
+        recipient: str,
+        reset_url: str,
+        expires_at: str,
+        report_ready: bool = False,
+    ) -> EmailResult:
         if not self.config.enabled:
             return EmailResult(attempted=False, sent=False, error="Email sending is disabled.")
 
@@ -72,7 +79,16 @@ class GraphMailClient:
         escaped_reset_url = escape(reset_url, quote=True)
         escaped_expires_at = escape(expires_at)
 
-        subject = "Set up your ALP Metrics account"
+        subject = "Your ALP Metrics report is ready" if report_ready else "Set up your ALP Metrics account"
+        heading = "Your report from ALP Metrics is ready!" if report_ready else "Set up your account"
+        button_label = "Go to report" if report_ready else "Set password"
+        introduction = (
+            "Your report from ALP Metrics is ready. An account has been created for you. "
+            "Choose a password, then sign in to view your report."
+            if report_ready
+            else "An ALP Metrics account has been created for you. Use the button below to choose your password "
+            "and sign in to the portal."
+        )
         html_body = (
             '<div style="margin:0;padding:0;background:#f6f8fb;font-family:Arial,sans-serif;color:#18212f;">'
             '<div style="max-width:560px;margin:0 auto;padding:32px 20px;">'
@@ -81,11 +97,10 @@ class GraphMailClient:
             "ALP Metrics Portal"
             "</p>"
             '<h1 style="margin:0 0 16px 0;font-size:24px;line-height:1.25;color:#111827;">'
-            "Set up your account"
+            f"{escape(heading)}"
             "</h1>"
             '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#334155;">'
-            "An ALP Metrics account has been created for you. Use the button below to choose your password "
-            "and sign in to the portal."
+            f"{escape(introduction)}"
             "</p>"
             '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;border-collapse:separate;">'
             "<tr>"
@@ -94,7 +109,7 @@ class GraphMailClient:
             'style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;'
             'border-radius:14px;padding:14px 22px;font-size:15px;line-height:1.2;'
             'background:#183c36;">'
-            "Set password"
+            f"{escape(button_label)}"
             "</a>"
             "</td>"
             "</tr>"
@@ -127,6 +142,67 @@ class GraphMailClient:
                             "contentType": "HTML",
                             "content": html_body,
                         },
+                        "toRecipients": [{"emailAddress": {"address": recipient}}],
+                    },
+                    "saveToSentItems": False,
+                },
+            )
+            return EmailResult(attempted=True, sent=True)
+        except Exception as exc:
+            return EmailResult(attempted=True, sent=False, error=str(exc))
+
+    def send_report_ready(self, *, recipient: str, report_url: str) -> EmailResult:
+        if not self.config.enabled:
+            return EmailResult(attempted=False, sent=False, error="Email sending is disabled.")
+
+        missing = self.config.missing_values()
+        if missing:
+            return EmailResult(attempted=False, sent=False, error=f"Missing email settings: {', '.join(missing)}.")
+
+        escaped_report_url = escape(report_url, quote=True)
+        html_body = (
+            '<div style="margin:0;padding:0;background:#f6f8fb;font-family:Arial,sans-serif;color:#18212f;">'
+            '<div style="max-width:560px;margin:0 auto;padding:32px 20px;">'
+            '<div style="background:#ffffff;border:1px solid #dce3ee;border-radius:8px;padding:28px;">'
+            '<p style="margin:0 0 8px 0;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#546179;">'
+            "ALP Metrics Portal"
+            "</p>"
+            '<h1 style="margin:0 0 16px 0;font-size:24px;line-height:1.25;color:#111827;">'
+            "Your report from ALP Metrics is ready!"
+            "</h1>"
+            '<p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#334155;">'
+            "Your report from ALP Metrics is ready! Use the button below to sign in and view it."
+            "</p>"
+            '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;border-collapse:separate;">'
+            "<tr>"
+            '<td bgcolor="#183c36" style="border-radius:14px;background:#183c36;">'
+            f'<a href="{escaped_report_url}" '
+            'style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;'
+            'border-radius:14px;padding:14px 22px;font-size:15px;line-height:1.2;background:#183c36;">'
+            "View your report"
+            "</a>"
+            "</td>"
+            "</tr>"
+            "</table>"
+            '<div style="border-top:1px solid #e5eaf2;margin:22px 0 0 0;padding-top:18px;">'
+            '<p style="margin:0 0 8px 0;font-size:13px;line-height:1.5;color:#64748b;">'
+            "If the button does not work, copy and paste this link into your browser:"
+            "</p>"
+            f'<p style="margin:0;word-break:break-all;font-size:13px;line-height:1.5;color:#183c36;">{escaped_report_url}</p>'
+            "</div>"
+            "</div>"
+            "</div>"
+            "</div>"
+        )
+
+        try:
+            self._request(
+                "POST",
+                f"/users/{quote(self.config.sender)}/sendMail",
+                json={
+                    "message": {
+                        "subject": "Your ALP Metrics report is ready",
+                        "body": {"contentType": "HTML", "content": html_body},
                         "toRecipients": [{"emailAddress": {"address": recipient}}],
                     },
                     "saveToSentItems": False,
@@ -170,3 +246,18 @@ class GraphMailClient:
 def send_password_reset_email(*, recipient: str, reset_url: str, expires_at: str) -> EmailResult:
     client = GraphMailClient(GraphMailConfig.from_env())
     return client.send_password_reset(recipient=recipient, reset_url=reset_url, expires_at=expires_at)
+
+
+def send_report_ready_setup_email(*, recipient: str, reset_url: str, expires_at: str) -> EmailResult:
+    client = GraphMailClient(GraphMailConfig.from_env())
+    return client.send_password_reset(
+        recipient=recipient,
+        reset_url=reset_url,
+        expires_at=expires_at,
+        report_ready=True,
+    )
+
+
+def send_report_ready_email(*, recipient: str, report_url: str) -> EmailResult:
+    client = GraphMailClient(GraphMailConfig.from_env())
+    return client.send_report_ready(recipient=recipient, report_url=report_url)

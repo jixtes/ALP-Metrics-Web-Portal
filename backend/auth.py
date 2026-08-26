@@ -25,6 +25,9 @@ from .email_service import EmailResult, send_password_reset_email
 db = SQLAlchemy()
 csrf = CSRFProtect()
 fsqla.FsModels.set_db_info(db)
+_user_datastore: SQLAlchemyUserDatastore | None = None
+
+INDIVIDUAL_REPORT_ROLE = "individual_report_access"
 
 
 class Role(db.Model, fsqla.FsRoleMixin):
@@ -57,6 +60,7 @@ class PasswordResetToken(db.Model):
 
 
 def init_auth(app: Flask) -> None:
+    global _user_datastore
     auth_db_path = Path(app.instance_path) / "auth.db"
     auth_db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -90,6 +94,7 @@ def init_auth(app: Flask) -> None:
     csrf.init_app(app)
 
     user_datastore = SQLAlchemyUserDatastore(db, User, Role)
+    _user_datastore = user_datastore
     Security(app, user_datastore)
 
     @app.errorhandler(CSRFError)
@@ -119,6 +124,43 @@ def authenticate_active_user_with_role(email: str, password: str, required_role:
     has_required_role = any(role.name == required_role for role in user.roles)
     db.session.commit()
     return has_required_role
+
+
+def ensure_individual_report_account(email: str, *, reset_origin: str) -> dict:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email or "@" not in normalized_email:
+        raise ValueError("A valid report_user_email is required.")
+    if _user_datastore is None:
+        raise RuntimeError("Authentication is not initialized.")
+
+    role = _user_datastore.find_role(INDIVIDUAL_REPORT_ROLE)
+    if role is None:
+        role = _user_datastore.create_role(
+            name=INDIVIDUAL_REPORT_ROLE,
+            description="Can open the individual Power BI report page.",
+        )
+        role.project_scope = "restricted"
+        role.report_scope = "restricted"
+        role.upload_scope = "none"
+        role.allowed_project_refs_json = "[]"
+        role.allowed_report_ids_json = "[]"
+        db.session.commit()
+
+    existing_user = _user_datastore.find_user(email=normalized_email)
+    if existing_user is not None:
+        return {"user": existing_user, "created": False, "reset": None}
+
+    user = _user_datastore.create_user(
+        email=normalized_email,
+        password=hash_password(secrets.token_urlsafe(32)),
+        active=True,
+        roles=[role],
+        full_name=None,
+        allowed_project_refs_json="[]",
+    )
+    db.session.commit()
+    reset_info = _issue_password_reset_link(user, user.id, origin=reset_origin)
+    return {"user": user, "created": True, "reset": reset_info}
 
 
 def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) -> None:
@@ -551,9 +593,10 @@ def _bootstrap_roles_and_admin(user_datastore: SQLAlchemyUserDatastore) -> None:
         ("operator", "Can run the pipeline and review workspace data."),
         ("viewer", "Read-only access to workspace data."),
         ("raw_data_api_access", "Can download allow-listed raw SurveyCTO data through the API."),
+        (INDIVIDUAL_REPORT_ROLE, "Can open the individual Power BI report page."),
     ]
     roles_exist = Role.query.first() is not None
-    roles_to_ensure = default_roles if not roles_exist else [default_roles[0], default_roles[3]]
+    roles_to_ensure = default_roles if not roles_exist else [default_roles[0], default_roles[3], default_roles[4]]
     for role_name, description in roles_to_ensure:
         if not user_datastore.find_role(role_name):
             user_datastore.create_role(name=role_name, description=description)
@@ -566,6 +609,12 @@ def _bootstrap_roles_and_admin(user_datastore: SQLAlchemyUserDatastore) -> None:
             role.allowed_project_refs_json = "[]"
             role.allowed_report_ids_json = "[]"
         elif role.name == "raw_data_api_access":
+            role.project_scope = "restricted"
+            role.report_scope = "restricted"
+            role.upload_scope = "none"
+            role.allowed_project_refs_json = "[]"
+            role.allowed_report_ids_json = "[]"
+        elif role.name == INDIVIDUAL_REPORT_ROLE:
             role.project_scope = "restricted"
             role.report_scope = "restricted"
             role.upload_scope = "none"
@@ -635,7 +684,7 @@ def _serialize_email_result(result: EmailResult) -> dict:
     }
 
 
-def _issue_password_reset_link(user: User, created_by_user_id: int) -> dict:
+def _issue_password_reset_link(user: User, created_by_user_id: int, *, origin: str | None = None) -> dict:
     plaintext_token = secrets.token_urlsafe(32)
     now = _utcnow()
     expires_at = now + timedelta(hours=int(current_app.config["ALP_RESET_LINK_HOURS"]))
@@ -652,7 +701,7 @@ def _issue_password_reset_link(user: User, created_by_user_id: int) -> dict:
     db.session.commit()
 
     return {
-        "reset_url": _build_reset_url(plaintext_token),
+        "reset_url": _build_reset_url(plaintext_token, origin=origin),
         "expires_at": expires_at,
     }
 
@@ -817,9 +866,11 @@ def _revoke_other_reset_tokens(user_id: int, *, except_id: int | None = None) ->
         row.revoked_at = now
 
 
-def _build_reset_url(plaintext_token: str) -> str:
-    origin = request.headers.get("Origin", "").strip() or request.url_root.rstrip("/")
-    return f"{origin}/reset-password?token={quote(plaintext_token)}"
+def _build_reset_url(plaintext_token: str, *, origin: str | None = None) -> str:
+    target_origin = str(origin or "").strip().rstrip("/")
+    if not target_origin:
+        target_origin = request.headers.get("Origin", "").strip().rstrip("/") or request.url_root.rstrip("/")
+    return f"{target_origin}/reset-password?token={quote(plaintext_token)}"
 
 
 def _token_from_reset_url(reset_url: str) -> str:

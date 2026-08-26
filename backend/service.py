@@ -101,6 +101,8 @@ def run_pipeline_and_snapshot(
     run_id: int | None = None,
     extract_mode: str = "surveycto",
     upload_to_sharepoint: bool = False,
+    publish_snapshot: bool = True,
+    sharepoint_folder: str | None = None,
     triggered_by_email: str | None = None,
     triggered_by_name: str | None = None,
 ) -> dict[str, Any]:
@@ -126,14 +128,20 @@ def run_pipeline_and_snapshot(
             config = _build_pipeline_config(extract_mode=extract_mode)
             _write_latest_pipeline_log(config.root_dir, "Pipeline execution started.\n")
             run_log = _run_pipeline_with_log_capture(config)
-            export_path = _resolve_export_path(config.root_dir)
+            export_path = _resolve_export_path(config)
             survey_rows, record_rows = build_snapshot_rows(export_path)
-            replace_run_snapshot(db_path, run_id=run_id, survey_rows=survey_rows, record_rows=record_rows)
+            if publish_snapshot:
+                replace_run_snapshot(db_path, run_id=run_id, survey_rows=survey_rows, record_rows=record_rows)
 
             upload_rows = []
             if upload_to_sharepoint:
-                upload_rows = _upload_export_files(config.root_dir)
-            replace_run_uploads(db_path, run_id=run_id, upload_rows=upload_rows)
+                upload_rows = _upload_export_files(
+                    config.root_dir,
+                    exports_dir=config.exports_dir,
+                    sharepoint_folder=sharepoint_folder,
+                )
+            if publish_snapshot:
+                replace_run_uploads(db_path, run_id=run_id, upload_rows=upload_rows)
 
             uploaded_count = sum(1 for row in upload_rows if row["status"] == "uploaded")
             failed_count = sum(1 for row in upload_rows if row["status"] == "failed")
@@ -271,9 +279,24 @@ def _run_pipeline(config: Any) -> Any:
     return pipeline_module.run_pipeline(config)
 
 
-def _upload_export_files(root_dir: Path) -> list[dict[str, Any]]:
+def _upload_export_files(
+    root_dir: Path,
+    *,
+    exports_dir: str,
+    sharepoint_folder: str | None = None,
+) -> list[dict[str, Any]]:
     sharepoint_module = importlib.import_module("scripts.sharepoint")
-    return sharepoint_module.upload_export_files(root_dir)
+    if exports_dir == "files/pipeline" and sharepoint_folder is None:
+        # Preserve the existing production behavior, which publishes the full files tree.
+        return sharepoint_module.upload_export_files(root_dir)
+
+    exports_root = root_dir / exports_dir
+    export_paths = [path.relative_to(root_dir) for path in exports_root.rglob("*") if path.is_file()]
+    return sharepoint_module.upload_export_files(
+        root_dir,
+        export_paths,
+        target_folder=sharepoint_folder,
+    )
 
 
 def _clear_generated_pipeline_modules(root_dir: Path) -> None:
@@ -366,9 +389,9 @@ def build_snapshot_rows(export_path: Path) -> tuple[list[dict[str, Any]], list[d
     return survey_rows, record_rows
 
 
-def _resolve_export_path(root_dir: Path) -> Path:
-    plain = root_dir / FINAL_EXPORT_PATH
-    labelled = root_dir / LABELLED_EXPORT_PATH
+def _resolve_export_path(config: Any) -> Path:
+    plain = config.root_dir / config.processed_csv_path
+    labelled = config.root_dir / config.labeled_csv_path
     if plain.exists():
         return plain
     if labelled.exists():
