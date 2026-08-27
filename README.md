@@ -131,6 +131,7 @@ SURVEYCTO_WEBHOOK_SECRET=replace-with-a-long-random-token
 SURVEYCTO_WEBHOOK_DEDUP_SECONDS=300
 SURVEYCTO_WEBHOOK_RESPONDENT_PREFIX=Jigsa Bulto
 SHAREPOINT_INPUT_FOLDER=ALP Metrics/Exports/inputs
+SHAREPOINT_XLSFORM_PATH=ALP/ALP Metrics/4. Product Development/1. Sample Details and Survey Forms/V3/OFFICIAL Versions/ALP_Metrics_Survey_v3.xlsx
 SURVEYCTO_TEST_SHAREPOINT_FOLDER=ALP Metrics/Exports/test_survey
 PORTAL_PUBLIC_URL=https://your-public-portal.example
 INDIVIDUAL_REPORT_NAME=IR_PO_Baseline_v3_test
