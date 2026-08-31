@@ -152,9 +152,9 @@ Power BI effective identity and uses the Power BI role `IR Web Demo User RLS`.
 Portal users with `individual_report_access` are redirected to
 `/individual-report` after login.
 
-Test-survey uploads from the local `files/local_update` workspace and the
+Test-survey uploads from the local `files/test_survey` workspace and the
 SharePoint `test_survey` folder are excluded from the portal's general Survey
-data files table.
+data files table. Legacy `local_update` entries remain hidden as well.
 
 ## Running Locally
 
