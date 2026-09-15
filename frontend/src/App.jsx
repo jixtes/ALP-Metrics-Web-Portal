@@ -399,7 +399,7 @@ function AlpMetricsPortalBrand({ large = false }) {
         <img className="alp-brand-logo" src={alpLogo} alt="" />
       </span>
       <span className="alp-portal-title" aria-hidden="true">
-        <span className="alp-metrics-word">metrics portal</span>
+        <span className="alp-metrics-word">Metrics Portal</span>
       </span>
     </h1>
   );
