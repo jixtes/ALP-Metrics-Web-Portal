@@ -392,6 +392,19 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true }) {
   );
 }
 
+function AlpMetricsPortalBrand() {
+  return (
+    <h1 className="alp-portal-brand">
+      <span className="alp-mark-crop">
+        <img className="alp-brand-logo" src={alpLogo} alt="ALP" />
+      </span>
+      <span className="alp-portal-title">
+        <span className="alp-metrics-word">metrics portal</span>
+      </span>
+    </h1>
+  );
+}
+
 function BrandingFooter() {
   return (
     <footer className="brand-footer" aria-label="ALP and IFC footer">
@@ -1964,9 +1977,7 @@ function App() {
       <main className="login-shell">
         <section className="login-card">
           <p className="eyebrow">Survey data management</p>
-          <h1>
-            ALP Metrics <span>Portal</span>
-          </h1>
+          <AlpMetricsPortalBrand />
           <p className="hero-text">Loading workspace…</p>
         </section>
       </main>
@@ -2026,9 +2037,7 @@ function App() {
       <main className="login-shell">
         <section className="login-card">
           <p className="eyebrow">Survey data management</p>
-          <h1>
-            ALP Metrics <span>Portal</span>
-          </h1>
+          <AlpMetricsPortalBrand />
 
           {!isForgotPasswordVisible ? (
             <form className="login-form" onSubmit={handleLoginSubmit} onKeyDown={handleLoginKeyDown} noValidate>
@@ -2107,9 +2116,7 @@ function App() {
         <section className="hero-card">
           <div className="hero-copy">
             <p className="eyebrow">Individual report</p>
-            <h1>
-              ALP Metrics <span>Portal</span>
-            </h1>
+            <AlpMetricsPortalBrand />
           </div>
           <div className="run-panel">
             <button type="button" className="secondary-button" onClick={handleLogout}>
@@ -3056,9 +3063,7 @@ function App() {
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">Survey data management</p>
-          <h1>
-            ALP Metrics <span>Portal</span>
-          </h1>
+          <AlpMetricsPortalBrand />
           <p className="hero-text">
             Run the pipeline, track project activity, and review reporting dashboards all in one place.
           </p>
