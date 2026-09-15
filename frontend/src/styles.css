@@ -226,6 +226,20 @@ select {
   white-space: nowrap;
 }
 
+.alp-portal-brand-large .alp-mark-crop {
+  flex-basis: clamp(87px, 20vw, 133px);
+  width: clamp(87px, 20vw, 133px);
+  height: clamp(38px, 8.7vw, 58px);
+}
+
+.alp-portal-brand-large .alp-brand-logo {
+  height: clamp(38px, 8.7vw, 58px);
+}
+
+.alp-portal-brand-large .alp-portal-title {
+  font-size: 0.66em;
+}
+
 .alp-metrics-word {
   display: inline-flex;
   align-items: center;

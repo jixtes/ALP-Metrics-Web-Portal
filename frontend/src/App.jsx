@@ -392,13 +392,13 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true }) {
   );
 }
 
-function AlpMetricsPortalBrand() {
+function AlpMetricsPortalBrand({ large = false }) {
   return (
-    <h1 className="alp-portal-brand">
-      <span className="alp-mark-crop">
-        <img className="alp-brand-logo" src={alpLogo} alt="ALP" />
+    <h1 className={`alp-portal-brand${large ? " alp-portal-brand-large" : ""}`} aria-label="ALP Metrics Portal">
+      <span className="alp-mark-crop" aria-hidden="true">
+        <img className="alp-brand-logo" src={alpLogo} alt="" />
       </span>
-      <span className="alp-portal-title">
+      <span className="alp-portal-title" aria-hidden="true">
         <span className="alp-metrics-word">metrics portal</span>
       </span>
     </h1>
@@ -3063,7 +3063,7 @@ function App() {
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">Survey data management</p>
-          <AlpMetricsPortalBrand />
+          <AlpMetricsPortalBrand large />
           <p className="hero-text">
             Run the pipeline, track project activity, and review reporting dashboards all in one place.
           </p>
