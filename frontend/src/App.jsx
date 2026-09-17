@@ -7,7 +7,6 @@ const POWERBI_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.9/d
 const INDIVIDUAL_REPORT_ROLE = "individual_report_access";
 const SETTINGS_TABLE_PAGE_SIZE = 8;
 const DASHBOARD_TABLE_PAGE_SIZE = 10;
-const MAX_SURVEY_TABLE_PAGE_SIZE = 25;
 
 const emptyDashboard = {
   latest_run: null,
@@ -24,7 +23,7 @@ const settingsSections = [
 ];
 
 const surveyColumns = [
-  { key: "survey_name", label: "Survey", type: "text" },
+  { key: "survey_name", label: "Surveys", type: "text" },
   { key: "project_ref", label: "Project", type: "text" },
   { key: "country", label: "Country", type: "text" },
   { key: "client", label: "Client", type: "text" },
@@ -444,10 +443,6 @@ function toFriendlyLoginError(error) {
 function App() {
   const settingsSectionHeadingRef = useRef(null);
   const dashboardTabShellRef = useRef(null);
-  const surveyPreviewRef = useRef(null);
-  const surveyListColumnRef = useRef(null);
-  const surveyTableBodyRef = useRef(null);
-  const surveyPaginationRef = useRef(null);
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -465,7 +460,6 @@ function App() {
   const [surveyFilter, setSurveyFilter] = useState("");
   const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
   const [surveyPage, setSurveyPage] = useState(1);
-  const [surveyPageSize, setSurveyPageSize] = useState(DASHBOARD_TABLE_PAGE_SIZE);
   const [uploadFilter, setUploadFilter] = useState("");
   const [uploadFolderFilter, setUploadFolderFilter] = useState("");
   const [uploadPage, setUploadPage] = useState(1);
@@ -1833,11 +1827,11 @@ function App() {
     const comparison = compareSurveyValues(left[column.key], right[column.key], column.type);
     return sortConfig.direction === "asc" ? comparison : -comparison;
   });
-  const surveyPageCount = Math.max(1, Math.ceil(sortedSurveys.length / surveyPageSize));
+  const surveyPageCount = Math.max(1, Math.ceil(sortedSurveys.length / DASHBOARD_TABLE_PAGE_SIZE));
   const activeSurveyPage = Math.min(surveyPage, surveyPageCount);
   const paginatedSurveys = sortedSurveys.slice(
-    (activeSurveyPage - 1) * surveyPageSize,
-    activeSurveyPage * surveyPageSize,
+    (activeSurveyPage - 1) * DASHBOARD_TABLE_PAGE_SIZE,
+    activeSurveyPage * DASHBOARD_TABLE_PAGE_SIZE,
   );
   const normalizedUploadFilter = uploadFilter.trim().toLowerCase();
   const uploadsWithFolders = dashboard.uploads.map((item) => ({
@@ -1984,73 +1978,6 @@ function App() {
       label: report.reportName || "Power BI dashboard",
     })),
   ];
-
-  useEffect(() => {
-    if (!selectedSurvey || currentView !== "dashboard" || activeDashboardTab !== "surveys") {
-      setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
-      return undefined;
-    }
-
-    const updateSurveyPageSize = () => {
-      if (!window.matchMedia("(min-width: 861px)").matches) {
-        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
-        return;
-      }
-
-      const preview = surveyPreviewRef.current;
-      const listColumn = surveyListColumnRef.current;
-      const tableBody = surveyTableBodyRef.current;
-      const firstRow = tableBody?.querySelector("tr");
-      if (!preview || !listColumn || !tableBody || !firstRow) {
-        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
-        return;
-      }
-
-      const previewHeight = preview.getBoundingClientRect().height;
-      const listTop = listColumn.getBoundingClientRect().top;
-      const tableBodyTop = tableBody.getBoundingClientRect().top;
-      const rowHeight = firstRow.getBoundingClientRect().height;
-      const listStyles = window.getComputedStyle(listColumn);
-      const bottomPadding = Number.parseFloat(listStyles.paddingBottom) || 0;
-      const paginationHeight = surveyPaginationRef.current?.getBoundingClientRect().height || 48;
-      const availableBodyHeight = previewHeight - (tableBodyTop - listTop) - bottomPadding;
-
-      if (availableBodyHeight <= 0 || rowHeight <= 0) {
-        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
-        return;
-      }
-
-      const rowsWithoutPagination = Math.floor(availableBodyHeight / rowHeight);
-      const rowsWithPagination = Math.floor((availableBodyHeight - paginationHeight) / rowHeight);
-      const calculatedPageSize =
-        sortedSurveys.length <= rowsWithoutPagination
-          ? sortedSurveys.length
-          : rowsWithPagination;
-      const nextPageSize = Math.min(
-        MAX_SURVEY_TABLE_PAGE_SIZE,
-        Math.max(DASHBOARD_TABLE_PAGE_SIZE, calculatedPageSize),
-      );
-
-      setSurveyPageSize((currentPageSize) => (currentPageSize === nextPageSize ? currentPageSize : nextPageSize));
-    };
-
-    const animationFrame = window.requestAnimationFrame(updateSurveyPageSize);
-    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateSurveyPageSize);
-    if (resizeObserver && surveyPreviewRef.current) {
-      resizeObserver.observe(surveyPreviewRef.current);
-    }
-    window.addEventListener("resize", updateSurveyPageSize);
-
-    return () => {
-      window.cancelAnimationFrame(animationFrame);
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", updateSurveyPageSize);
-    };
-  }, [activeDashboardTab, currentView, selectedSurvey, sortedSurveys.length]);
-
-  useEffect(() => {
-    setSurveyPage((currentPage) => Math.min(currentPage, surveyPageCount));
-  }, [surveyPageCount]);
 
   if (isBootstrapping) {
     return (
@@ -3242,7 +3169,6 @@ function App() {
                 {selectedSurvey ? (
                   <section
                     key={selectedSurvey.id}
-                    ref={surveyPreviewRef}
                     className="survey-split-column survey-split-column-preview survey-split-column-preview-enter"
                   >
                     <div className="section-heading section-heading-inline section-heading-inline-top">
@@ -3251,13 +3177,6 @@ function App() {
                         <h2>{selectedSurvey.survey_name}</h2>
                         <p>Details and recent activity for the survey selected in the list.</p>
                       </div>
-                      <button
-                        type="button"
-                        className="secondary-button secondary-button-compact preview-hide-button"
-                        onClick={() => setSelectedSurveyId(null)}
-                      >
-                        Hide preview
-                      </button>
                     </div>
 
                     <div className="detail-grid detail-grid-primary detail-grid-compact">
@@ -3327,15 +3246,16 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="detail-section-block">
-                      <hr className="survey-preview-divider" />
-                      <br />
-                      <div className="detail-section-heading">
-                        <p>Daily entity type and enumerator contributions for recent active days.</p>
+                    <details className="activity-disclosure">
+                      <summary>
+                        <span>Recent activity</span>
                         {dailySubmissionRows.length > 0 ? (
                           <span className="scroll-hint">{dailySubmissionRows.length} active days</span>
                         ) : null}
-                      </div>
+                      </summary>
+                      <p className="activity-disclosure-copy">
+                        Daily entity type and enumerator contributions for recent active days.
+                      </p>
 
                       {dailySubmissionRows.length > 0 ? (
                         <div className="table-wrap aggregate-table-wrap aggregate-table-wrap-scroll">
@@ -3365,56 +3285,64 @@ function App() {
                       ) : (
                         <div className="table-empty">No daily counts available yet.</div>
                       )}
-                    </div>
+                    </details>
                   </section>
                 ) : null}
 
                 <section
-                  ref={surveyListColumnRef}
                   className={`survey-split-column survey-split-column-list${selectedSurvey ? " survey-split-column-list-active" : ""}`}
                 >
-                  <div className="section-heading">
-                    <h2>Survey list</h2>
-                    {selectedSurvey && sortedSurveys.length > 1 ? (
-                      <p>
-                        <span className="inline-instruction">Click another project</span> for a quick preview.
-                      </p>
-                    ) : selectedSurvey ? (
-                      <p>Showing the latest project activity.</p>
-                    ) : (
-                      <p>
-                        Browse the latest project activity. <span className="inline-instruction">Click on a project</span> for a
-                        quick preview.
-                      </p>
-                    )}
+                  <div
+                    className={`section-heading${selectedSurvey ? " section-heading-inline section-heading-inline-top section-heading-compact survey-list-preview-actions" : ""}`}
+                  >
+                    {!selectedSurvey ? (
+                      <div>
+                        <h2>Survey list</h2>
+                        <p>
+                          Browse the latest project activity. <span className="inline-instruction">Click on a project</span> for a
+                          quick preview.
+                        </p>
+                      </div>
+                    ) : null}
+                    {selectedSurvey ? (
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-compact preview-hide-button"
+                        onClick={() => setSelectedSurveyId(null)}
+                      >
+                        Show as list
+                      </button>
+                    ) : null}
                   </div>
 
-                  <div className="filter-row">
-                    <div className="filter-heading">
-                      <span>Number of surveys: {sortedSurveys.length}</span>
+                  {!selectedSurvey ? (
+                    <div className="filter-row">
+                      <div className="filter-heading">
+                        <span>Number of surveys: {sortedSurveys.length}</span>
+                      </div>
+                      <input
+                        id="survey-filter"
+                        type="text"
+                        value={surveyFilter}
+                        onChange={(event) => setSurveyFilter(event.target.value)}
+                        placeholder="Filter surveys"
+                        aria-label="Filter surveys"
+                      />
+                      <select
+                        id="survey-phase-filter"
+                        value={surveyPhaseFilter}
+                        onChange={(event) => setSurveyPhaseFilter(event.target.value)}
+                        aria-label="Filter surveys by phase"
+                      >
+                        <option value="">All phases</option>
+                        {surveyPhaseOptions.map((phase) => (
+                          <option key={phase} value={phase}>
+                            {phase}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <input
-                      id="survey-filter"
-                      type="text"
-                      value={surveyFilter}
-                      onChange={(event) => setSurveyFilter(event.target.value)}
-                      placeholder="Filter surveys"
-                      aria-label="Filter surveys"
-                    />
-                    <select
-                      id="survey-phase-filter"
-                      value={surveyPhaseFilter}
-                      onChange={(event) => setSurveyPhaseFilter(event.target.value)}
-                      aria-label="Filter surveys by phase"
-                    >
-                      <option value="">All phases</option>
-                      {surveyPhaseOptions.map((phase) => (
-                        <option key={phase} value={phase}>
-                          {phase}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  ) : null}
 
                   {isLoading ? (
                     <div className="table-empty">Loading surveys...</div>
@@ -3423,11 +3351,11 @@ function App() {
                   ) : filteredSurveys.length === 0 ? (
                     <div className="table-empty">No surveys match the current filter.</div>
                   ) : (
-                    <div className="table-wrap">
-                      <table>
+                    <div className={`table-wrap${selectedSurvey ? " survey-name-list-wrap" : ""}`}>
+                      <table className={selectedSurvey ? "survey-name-list-table" : undefined}>
                         <thead>
                           <tr>
-                            {surveyColumns.map((column) => {
+                            {selectedSurvey ? <th>Surveys</th> : surveyColumns.map((column) => {
                               const isActive = sortConfig.key === column.key;
                               const sortIndicator = isActive ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕";
 
@@ -3446,7 +3374,7 @@ function App() {
                             })}
                           </tr>
                         </thead>
-                        <tbody ref={surveyTableBodyRef}>
+                        <tbody>
                           {paginatedSurveys.map((survey) => (
                             <tr
                               key={survey.id}
@@ -3455,18 +3383,22 @@ function App() {
                               title="Click to see a quick preview"
                             >
                               <td data-label="Survey">{survey.survey_name}</td>
-                              <td data-label="Project">{survey.project_ref || "N/A"}</td>
-                              <td data-label="Country">{survey.country || "N/A"}</td>
-                              <td data-label="Client">{survey.client || "N/A"}</td>
-                              <td data-label="Phase">{survey.phase || "N/A"}</td>
-                              <td data-label="Submissions">{survey.submission_count}</td>
-                              <td data-label="Latest">{formatDate(survey.last_submission_at)}</td>
+                              {!selectedSurvey ? (
+                                <>
+                                  <td data-label="Project">{survey.project_ref || "N/A"}</td>
+                                  <td data-label="Country">{survey.country || "N/A"}</td>
+                                  <td data-label="Client">{survey.client || "N/A"}</td>
+                                  <td data-label="Phase">{survey.phase || "N/A"}</td>
+                                  <td data-label="Submissions">{survey.submission_count}</td>
+                                  <td data-label="Latest">{formatDate(survey.last_submission_at)}</td>
+                                </>
+                              ) : null}
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {sortedSurveys.length > surveyPageSize ? (
-                        <div className="table-pagination" ref={surveyPaginationRef}>
+                      {sortedSurveys.length > DASHBOARD_TABLE_PAGE_SIZE ? (
+                        <div className="table-pagination">
                           <span>
                             Page {activeSurveyPage} of {surveyPageCount} · {sortedSurveys.length} surveys
                           </span>
@@ -3567,7 +3499,7 @@ function App() {
                           const statusDetails = uploadStatusDetails(item);
 
                           return (
-                            <tr key={item.id}>
+                            <tr key={item.id} className="data-file-row">
                               <td data-label="File" className="upload-file-cell">
                                 <div className="upload-file-row">
                                   <span
