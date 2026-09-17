@@ -781,6 +781,10 @@ select {
   align-items: start;
 }
 
+.survey-preview-heading {
+  margin-bottom: 24px;
+}
+
 .section-heading h2 {
   margin: 0 0 4px;
 }

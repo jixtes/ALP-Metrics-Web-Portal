@@ -1971,7 +1971,7 @@ function App() {
   const activeSettings =
     visibleSettingsSections.find((section) => section.key === activeSettingsSection) ?? visibleSettingsSections[0];
   const dashboardTabs = [
-    { key: "surveys", label: "Survey list" },
+    { key: "surveys", label: "Survey overview" },
     ...(canSeeUploads ? [{ key: "uploads", label: "Survey data files" }] : []),
     ...embeddedReports.map((report) => ({
       key: `powerbi:${report.reportId}`,
@@ -3171,7 +3171,7 @@ function App() {
                     key={selectedSurvey.id}
                     className="survey-split-column survey-split-column-preview survey-split-column-preview-enter"
                   >
-                    <div className="section-heading section-heading-inline section-heading-inline-top">
+                    <div className="section-heading section-heading-inline section-heading-inline-top survey-preview-heading">
                       <div>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
@@ -3295,7 +3295,7 @@ function App() {
                         <h2>Survey list</h2>
                         <p>
                           Browse the latest project activity. <span className="inline-instruction">Click on a project</span> for a
-                          quick preview.
+                          survey overview.
                         </p>
                       </div>
                     ) : null}
@@ -3375,7 +3375,7 @@ function App() {
                               key={survey.id}
                               className={`survey-list-row${survey.id === selectedSurveyId ? " selected-row" : ""}`}
                               onClick={() => setSelectedSurveyId(survey.id)}
-                              title="Click to see a quick preview"
+                              title="Click to see the survey overview"
                             >
                               <td data-label="Survey">{survey.survey_name}</td>
                               {!selectedSurvey ? (
