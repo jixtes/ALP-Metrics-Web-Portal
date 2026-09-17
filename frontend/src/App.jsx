@@ -1972,7 +1972,7 @@ function App() {
     visibleSettingsSections.find((section) => section.key === activeSettingsSection) ?? visibleSettingsSections[0];
   const dashboardTabs = [
     { key: "surveys", label: "Survey overview" },
-    ...(canSeeUploads ? [{ key: "uploads", label: "Survey data files" }] : []),
+    ...(canSeeUploads ? [{ key: "uploads", label: "Data files" }] : []),
     ...embeddedReports.map((report) => ({
       key: `powerbi:${report.reportId}`,
       label: report.reportName || "Power BI dashboard",
@@ -3430,7 +3430,7 @@ function App() {
             <article className="detail-card survey-split-panel">
               <section className="survey-split-column survey-split-column-list">
                 <div className="section-heading">
-                  <h2>Survey data files</h2>
+                  <h2>Data files</h2>
                   <p>Files produced by the latest pipeline run and their upload status.</p>
                 </div>
 
