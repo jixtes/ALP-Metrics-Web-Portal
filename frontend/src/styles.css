@@ -612,7 +612,7 @@ select {
 
 .survey-split-column-list-active {
   position: relative;
-  padding-top: 68px !important;
+  padding-top: 76px !important;
   animation: surveyListSettle 240ms ease-out;
 }
 
@@ -636,9 +636,21 @@ select {
 }
 
 .survey-list-preview-actions .preview-hide-button {
-  min-height: 40px;
-  padding-inline: 17px;
-  font-size: 0.9rem;
+  min-height: 46px;
+  padding-inline: 22px;
+  font-size: 0.96rem;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.survey-list-preview-actions .preview-hide-button:hover {
+  border-color: rgba(24, 60, 54, 0.3) !important;
+  background: rgba(24, 60, 54, 0.16) !important;
+  box-shadow: 0 6px 14px rgba(24, 60, 54, 0.12);
+  transform: translateY(-1px);
 }
 
 .survey-name-list-table {
@@ -1174,6 +1186,19 @@ tbody tr:hover,
   font-weight: 800;
   cursor: pointer;
   list-style: none;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.activity-disclosure summary:hover {
+  background: rgba(24, 60, 54, 0.08);
+}
+
+.activity-disclosure summary:focus-visible {
+  outline: 2px solid rgba(24, 60, 54, 0.42);
+  outline-offset: -2px;
+  background: rgba(24, 60, 54, 0.08);
 }
 
 .activity-disclosure summary::-webkit-details-marker {
@@ -1202,12 +1227,6 @@ tbody tr:hover,
 
 .activity-disclosure .scroll-hint {
   margin: 0 0 0 auto;
-}
-
-.activity-disclosure-copy {
-  margin: 12px 14px;
-  color: var(--muted);
-  font-size: 0.9rem;
 }
 
 .activity-disclosure > .table-wrap,

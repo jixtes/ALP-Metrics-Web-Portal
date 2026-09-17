@@ -3248,15 +3248,11 @@ function App() {
 
                     <details className="activity-disclosure">
                       <summary>
-                        <span>Recent activity</span>
+                        <span>Enumerator activities</span>
                         {dailySubmissionRows.length > 0 ? (
                           <span className="scroll-hint">{dailySubmissionRows.length} active days</span>
                         ) : null}
                       </summary>
-                      <p className="activity-disclosure-copy">
-                        Daily entity type and enumerator contributions for recent active days.
-                      </p>
-
                       {dailySubmissionRows.length > 0 ? (
                         <div className="table-wrap aggregate-table-wrap aggregate-table-wrap-scroll">
                           <table className="aggregate-table">
