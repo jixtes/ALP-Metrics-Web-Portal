@@ -7,6 +7,7 @@ const POWERBI_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.9/d
 const INDIVIDUAL_REPORT_ROLE = "individual_report_access";
 const SETTINGS_TABLE_PAGE_SIZE = 8;
 const DASHBOARD_TABLE_PAGE_SIZE = 10;
+const MAX_SURVEY_TABLE_PAGE_SIZE = 25;
 
 const emptyDashboard = {
   latest_run: null,
@@ -34,7 +35,6 @@ const surveyColumns = [
 
 const uploadColumns = [
   { key: "file_name", label: "File", type: "text" },
-  { key: "folder", label: "Folder", type: "text" },
   { key: "web_url", label: "Link", type: "text" },
   { key: "uploaded_at", label: "Uploaded", type: "date" },
 ];
@@ -192,6 +192,14 @@ function getSharePointFolder(item) {
   }
 
   return parts.slice(0, -1).join("/");
+}
+
+function formatFolderPath(folder) {
+  if (!folder || folder === ".") {
+    return "Root folder";
+  }
+
+  return String(folder).split("/").filter(Boolean).join(" › ");
 }
 
 function buildEnabledModules(survey) {
@@ -436,6 +444,10 @@ function toFriendlyLoginError(error) {
 function App() {
   const settingsSectionHeadingRef = useRef(null);
   const dashboardTabShellRef = useRef(null);
+  const surveyPreviewRef = useRef(null);
+  const surveyListColumnRef = useRef(null);
+  const surveyTableBodyRef = useRef(null);
+  const surveyPaginationRef = useRef(null);
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -453,6 +465,7 @@ function App() {
   const [surveyFilter, setSurveyFilter] = useState("");
   const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
   const [surveyPage, setSurveyPage] = useState(1);
+  const [surveyPageSize, setSurveyPageSize] = useState(DASHBOARD_TABLE_PAGE_SIZE);
   const [uploadFilter, setUploadFilter] = useState("");
   const [uploadFolderFilter, setUploadFolderFilter] = useState("");
   const [uploadPage, setUploadPage] = useState(1);
@@ -1820,11 +1833,11 @@ function App() {
     const comparison = compareSurveyValues(left[column.key], right[column.key], column.type);
     return sortConfig.direction === "asc" ? comparison : -comparison;
   });
-  const surveyPageCount = Math.max(1, Math.ceil(sortedSurveys.length / DASHBOARD_TABLE_PAGE_SIZE));
+  const surveyPageCount = Math.max(1, Math.ceil(sortedSurveys.length / surveyPageSize));
   const activeSurveyPage = Math.min(surveyPage, surveyPageCount);
   const paginatedSurveys = sortedSurveys.slice(
-    (activeSurveyPage - 1) * DASHBOARD_TABLE_PAGE_SIZE,
-    activeSurveyPage * DASHBOARD_TABLE_PAGE_SIZE,
+    (activeSurveyPage - 1) * surveyPageSize,
+    activeSurveyPage * surveyPageSize,
   );
   const normalizedUploadFilter = uploadFilter.trim().toLowerCase();
   const uploadsWithFolders = dashboard.uploads.map((item) => ({
@@ -1971,6 +1984,73 @@ function App() {
       label: report.reportName || "Power BI dashboard",
     })),
   ];
+
+  useEffect(() => {
+    if (!selectedSurvey || currentView !== "dashboard" || activeDashboardTab !== "surveys") {
+      setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
+      return undefined;
+    }
+
+    const updateSurveyPageSize = () => {
+      if (!window.matchMedia("(min-width: 861px)").matches) {
+        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
+        return;
+      }
+
+      const preview = surveyPreviewRef.current;
+      const listColumn = surveyListColumnRef.current;
+      const tableBody = surveyTableBodyRef.current;
+      const firstRow = tableBody?.querySelector("tr");
+      if (!preview || !listColumn || !tableBody || !firstRow) {
+        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
+        return;
+      }
+
+      const previewHeight = preview.getBoundingClientRect().height;
+      const listTop = listColumn.getBoundingClientRect().top;
+      const tableBodyTop = tableBody.getBoundingClientRect().top;
+      const rowHeight = firstRow.getBoundingClientRect().height;
+      const listStyles = window.getComputedStyle(listColumn);
+      const bottomPadding = Number.parseFloat(listStyles.paddingBottom) || 0;
+      const paginationHeight = surveyPaginationRef.current?.getBoundingClientRect().height || 48;
+      const availableBodyHeight = previewHeight - (tableBodyTop - listTop) - bottomPadding;
+
+      if (availableBodyHeight <= 0 || rowHeight <= 0) {
+        setSurveyPageSize(DASHBOARD_TABLE_PAGE_SIZE);
+        return;
+      }
+
+      const rowsWithoutPagination = Math.floor(availableBodyHeight / rowHeight);
+      const rowsWithPagination = Math.floor((availableBodyHeight - paginationHeight) / rowHeight);
+      const calculatedPageSize =
+        sortedSurveys.length <= rowsWithoutPagination
+          ? sortedSurveys.length
+          : rowsWithPagination;
+      const nextPageSize = Math.min(
+        MAX_SURVEY_TABLE_PAGE_SIZE,
+        Math.max(DASHBOARD_TABLE_PAGE_SIZE, calculatedPageSize),
+      );
+
+      setSurveyPageSize((currentPageSize) => (currentPageSize === nextPageSize ? currentPageSize : nextPageSize));
+    };
+
+    const animationFrame = window.requestAnimationFrame(updateSurveyPageSize);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateSurveyPageSize);
+    if (resizeObserver && surveyPreviewRef.current) {
+      resizeObserver.observe(surveyPreviewRef.current);
+    }
+    window.addEventListener("resize", updateSurveyPageSize);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateSurveyPageSize);
+    };
+  }, [activeDashboardTab, currentView, selectedSurvey, sortedSurveys.length]);
+
+  useEffect(() => {
+    setSurveyPage((currentPage) => Math.min(currentPage, surveyPageCount));
+  }, [surveyPageCount]);
 
   if (isBootstrapping) {
     return (
@@ -3162,6 +3242,7 @@ function App() {
                 {selectedSurvey ? (
                   <section
                     key={selectedSurvey.id}
+                    ref={surveyPreviewRef}
                     className="survey-split-column survey-split-column-preview survey-split-column-preview-enter"
                   >
                     <div className="section-heading section-heading-inline section-heading-inline-top">
@@ -3289,6 +3370,7 @@ function App() {
                 ) : null}
 
                 <section
+                  ref={surveyListColumnRef}
                   className={`survey-split-column survey-split-column-list${selectedSurvey ? " survey-split-column-list-active" : ""}`}
                 >
                   <div className="section-heading">
@@ -3364,7 +3446,7 @@ function App() {
                             })}
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody ref={surveyTableBodyRef}>
                           {paginatedSurveys.map((survey) => (
                             <tr
                               key={survey.id}
@@ -3383,8 +3465,8 @@ function App() {
                           ))}
                         </tbody>
                       </table>
-                      {sortedSurveys.length > DASHBOARD_TABLE_PAGE_SIZE ? (
-                        <div className="table-pagination">
+                      {sortedSurveys.length > surveyPageSize ? (
+                        <div className="table-pagination" ref={surveyPaginationRef}>
                           <span>
                             Page {activeSurveyPage} of {surveyPageCount} · {sortedSurveys.length} surveys
                           </span>
@@ -3495,10 +3577,12 @@ function App() {
                                   >
                                     {statusDetails.icon}
                                   </span>
-                                  <span className="upload-file-name">{item.file_name}</span>
+                                  <span className="upload-file-copy">
+                                    <span className="upload-file-name">{item.file_name}</span>
+                                    <span className="upload-file-path">{formatFolderPath(item.folder)}</span>
+                                  </span>
                                 </div>
                               </td>
-                              <td data-label="Folder">{item.folder}</td>
                               <td data-label="Link">
                                 {item.web_url ? (
                                   <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
