@@ -3175,7 +3175,6 @@ function App() {
                       <div>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
-                        <p>Details and recent activity for the survey selected in the list.</p>
                       </div>
                     </div>
 
