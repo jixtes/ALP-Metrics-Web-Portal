@@ -3288,7 +3288,7 @@ function App() {
                   className={`survey-split-column survey-split-column-list${selectedSurvey ? " survey-split-column-list-active" : ""}`}
                 >
                   <div
-                    className={`section-heading${selectedSurvey ? " section-heading-inline section-heading-inline-top section-heading-compact survey-list-preview-actions" : ""}`}
+                    className={`section-heading section-heading-inline section-heading-inline-top${selectedSurvey ? " section-heading-compact survey-list-preview-actions" : ""}`}
                   >
                     {!selectedSurvey ? (
                       <div>
@@ -3307,7 +3307,19 @@ function App() {
                       >
                         Show as list
                       </button>
-                    ) : null}
+                    ) : (
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-compact survey-overview-button"
+                        onClick={() => {
+                          setSurveyPage(1);
+                          setSelectedSurveyId(sortedSurveys[0]?.id ?? null);
+                        }}
+                        disabled={sortedSurveys.length === 0}
+                      >
+                        Show details
+                      </button>
+                    )}
                   </div>
 
                   {!selectedSurvey ? (

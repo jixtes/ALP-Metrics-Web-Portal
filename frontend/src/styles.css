@@ -597,7 +597,17 @@ select {
 }
 
 .survey-split-column-preview {
-  border-right: 1px solid rgba(19, 33, 32, 0.08);
+  position: relative;
+}
+
+.survey-split-column-preview::after {
+  content: "";
+  position: absolute;
+  top: 84px;
+  right: -1px;
+  bottom: 84px;
+  border-right: 2px dotted rgba(0, 36, 72, 0.2);
+  pointer-events: none;
 }
 
 .survey-split-column-preview-enter {
@@ -635,10 +645,8 @@ select {
   margin: 0;
 }
 
-.survey-list-preview-actions .preview-hide-button {
-  min-height: 46px;
-  padding-inline: 22px;
-  font-size: 0.96rem;
+.survey-list-preview-actions .preview-hide-button,
+.survey-overview-button {
   transition:
     background-color 160ms ease,
     border-color 160ms ease,
@@ -646,7 +654,8 @@ select {
     transform 160ms ease;
 }
 
-.survey-list-preview-actions .preview-hide-button:hover {
+.survey-list-preview-actions .preview-hide-button:hover,
+.survey-overview-button:hover:not(:disabled) {
   border-color: rgba(24, 60, 54, 0.3) !important;
   background: rgba(24, 60, 54, 0.16) !important;
   box-shadow: 0 6px 14px rgba(24, 60, 54, 0.12);
@@ -666,6 +675,15 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.survey-name-list-table .survey-list-row:not(.selected-row):hover td {
+  background: transparent;
+}
+
+.survey-name-list-table .survey-list-row:not(.selected-row):hover td:first-child {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .content-column {
@@ -802,11 +820,12 @@ select {
   flex-shrink: 0;
 }
 
-.section-heading .preview-hide-button {
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: 0.82rem;
+.section-heading .preview-hide-button,
+.section-heading .survey-overview-button {
+  min-width: 170px;
+  min-height: 46px;
+  padding: 0 22px;
+  font-size: 0.96rem;
 }
 
 
@@ -1830,6 +1849,10 @@ tbody tr:hover,
 
   .survey-split-column-preview {
     border-right: none;
+  }
+
+  .survey-split-column-preview::after {
+    display: none;
   }
 
   .survey-split-grid-active .survey-split-column-list {
