@@ -3294,8 +3294,7 @@ function App() {
                       <div>
                         <h2>Survey list</h2>
                         <p>
-                          Browse the latest project activity. <span className="inline-instruction">Click on a project</span> for a
-                          survey overview.
+                          <span className="inline-instruction">Click on a project</span> to see more details.
                         </p>
                       </div>
                     ) : null}
