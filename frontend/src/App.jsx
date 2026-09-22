@@ -2186,8 +2186,7 @@ function App() {
     );
   }
 
-  if (currentView === "settings") {
-    return (
+  const settingsView = currentView === "settings" ? (
       <main className="page-shell">
         <section className="hero-card">
           <div className="hero-copy">
@@ -3107,11 +3106,12 @@ function App() {
 
         <BrandingFooter />
       </main>
-    );
-  }
+    ) : null;
 
   return (
-    <main className="page-shell dashboard-shell">
+    <>
+    {settingsView}
+    <main className="page-shell dashboard-shell" hidden={currentView === "settings"}>
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">Survey data management</p>
@@ -3628,7 +3628,7 @@ function App() {
         {embeddedReports
           .filter((report) => visitedPowerBIReports.includes(report.reportId))
           .map((report) => {
-            const isActive = `powerbi:${report.reportId}` === activeDashboardTab;
+            const isActive = currentView === "dashboard" && `powerbi:${report.reportId}` === activeDashboardTab;
             return (
               <div key={report.reportId} hidden={!isActive}>
                 <EmbeddedPowerBIReport report={report} isActive={isActive} />
@@ -3639,6 +3639,7 @@ function App() {
 
       <BrandingFooter />
     </main>
+    </>
   );
 }
 
