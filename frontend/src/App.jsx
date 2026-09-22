@@ -3558,6 +3558,7 @@ function App() {
                                 {item.pipeline_version === "V2" ? (
                                   item.data_folders.length ? item.data_folders.map((folder) => (
                                     <a key={folder.url} className="sharepoint-link-button" href={folder.url} target="_blank" rel="noreferrer">
+                                      <span className="sharepoint-link-mark" aria-hidden="true" />
                                       {item.data_folders.length === 1 ? "Open data folder" : `Open ${folder.name} data folder`}
                                     </a>
                                   )) : "N/A"
