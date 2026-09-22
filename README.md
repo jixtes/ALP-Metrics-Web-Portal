@@ -38,6 +38,60 @@ npm install
 
 ## Pipeline Repository
 
+The portal's Update data control selects **V2** or **V3**. Both versions appear
+in Survey overview, with version and survey labels to distinguish their project
+instances. V3 updates always extract fresh SurveyCTO data; CSV is no longer a
+portal run option. The individual-report webhook keeps its isolated V3 test mode.
+
+Version-specific integration code lives in `backend/pipelines/v2.py` and
+`backend/pipelines/v3.py`. `backend/service.py` dispatches requests, while shared
+summary calculations live in `backend/pipelines/snapshots.py`.
+
+V2 runs its root `main.py` in a subprocess with its own Python environment. That
+runner calls `upload_to_sharepoint.py` and writes a run manifest. Portal runs
+use a fresh `runs/portal-<run id>-<suffix>/output/` directory, preventing old files
+from being mistaken for outputs of the current run. Configure paths with:
+
+```env
+ALP_V2_PIPELINE_REPO_PATH=../alp-metrics-pipeline-v2
+ALP_V2_PYTHON=.runner-venv/bin/python
+ALP_V2_TIMEOUT_SECONDS=3600
+V2_SHAREPOINT_FOLDER=ALP/ALP Metrics/3. Portal Pipeline/V2
+```
+
+Repository paths are resolved relative to the portal directory. The V2 Python
+path is resolved relative to V2; when unset, the adapter uses V2's `.runner-venv`
+if available, otherwise the portal's Python. Install V2 dependencies in a
+compatible environment before running it. Portal Microsoft/SharePoint settings
+are passed to the child process; SurveyCTO settings are read from V2's `.env`
+and the runner's shared parent `.env`.
+
+After V2 finishes, the portal imports each successful job's
+`data/*FullProcessedDataWithLabels.csv`. It stores project, version, source
+survey, phase, client, country, assessor, processed submission counts, date
+ranges, enumerator activity, and entity counts. Multiple phases get separate
+instances. Failed or empty jobs preserve their previous snapshots. Empty sources
+are skipped with an explanation; processing failures alongside successful jobs
+are reported as a partial update. Raw respondent previews remain disabled.
+
+Database initialization adds `pipeline_version` to runs, snapshots, and files;
+existing entries become V3. Updates replace only the selected version's data,
+and V2 replaces only successfully refreshed jobs. Summaries and file records
+are committed together. Each version keeps its own latest-run status and logs.
+
+V2 project grants use version-specific project keys, so a V3 grant does not
+automatically grant access to a similarly named V2 project. Project-file access
+includes only `<project>/<survey>/data/`; the portal links to that SharePoint
+folder and excludes raw/review folders for these users. SharePoint permissions
+must also permit the user to open the link. Uploading does not grant permissions.
+
+The Data files view groups V2 files into one entry per project with links to its
+data folders. V2 tags are red and V3 tags are green. QC and individual-report
+folders are hidden from the file list and folder filter.
+
+Admin pipeline status and Git pull controls apply to the selected version.
+Both pipelines' runs and pulls are serialized within the backend process.
+
 The backend imports and runs the pipeline from a separate local checkout. By
 default it looks for a sibling directory:
 
@@ -71,6 +125,9 @@ Admins can manage the pipeline from Settings -> Pipeline:
 - inspect the latest pull output and pipeline run log
 
 Pulling is blocked when the pipeline repository has local uncommitted changes.
+Analysts and reviewers should follow the pipeline repository's
+[Git and release workflow](https://github.com/jixtes/ALP-Metrics-V3-pipeline/blob/main/CONTRIBUTING.md)
+before code is pulled onto a staging or production server.
 
 ## Database Files
 

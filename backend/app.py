@@ -31,6 +31,7 @@ from .service import (
     get_pipeline_repo_status,
     pull_pipeline_repo,
     run_pipeline_and_snapshot,
+    normalize_pipeline_version,
 )
 from .survey_relay import register_survey_relay_routes
 from .surveycto_webhook import register_surveycto_webhook_route
@@ -54,6 +55,7 @@ def _run_pipeline_background(
     *,
     run_id: int,
     extract_mode: str,
+    pipeline_version: str = "V3",
     triggered_by_email: str | None,
     triggered_by_name: str | None,
 ) -> None:
@@ -62,6 +64,7 @@ def _run_pipeline_background(
             db_path,
             run_id=run_id,
             extract_mode=extract_mode,
+            pipeline_version=pipeline_version,
             upload_to_sharepoint=True,
             triggered_by_email=triggered_by_email,
             triggered_by_name=triggered_by_name,
@@ -71,7 +74,7 @@ def _run_pipeline_background(
         pass
 
 
-def create_app() -> Flask:
+def create_app(config: dict | None = None) -> Flask:
     root_dir = Path(__file__).resolve().parents[1]
     frontend_dist = root_dir / "frontend" / "dist"
     instance_dir = root_dir / "instance"
@@ -80,6 +83,8 @@ def create_app() -> Flask:
         static_folder=None,
         instance_path=str(instance_dir),
     )
+    if config:
+        app.config.update(config)
     init_auth(app)
     register_survey_relay_routes(app)
 
@@ -117,9 +122,21 @@ def create_app() -> Flask:
                 project_scope,
                 allowed_project_refs,
             )
+        if upload_scope == "none":
+            for survey in dashboard_data["surveys"]:
+                survey["data_folder_url"] = None
         latest_run = dashboard_data.get("latest_run")
         if latest_run and latest_run.get("pipeline_commit_after"):
-            latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after")))
+            latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after"), latest_run["pipeline_version"]))
+        for version, run in dashboard_data["latest_runs"].items():
+            if run and run.get("pipeline_commit_after"):
+                run.update(get_pipeline_commit_details(run["pipeline_commit_after"], version))
+        # Legacy V2 logs can contain printed response rows. Only administrators
+        # may inspect logs; project-level access exposes aggregate snapshots.
+        if preview or not current_user.has_role("admin"):
+            for run in [latest_run, *dashboard_data["latest_runs"].values()]:
+                if run:
+                    run.pop("run_log", None)
         if preview:
             dashboard_data["accessPreview"] = {
                 "role": preview["role"],
@@ -136,21 +153,23 @@ def create_app() -> Flask:
     @auth_required("session")
     def run_pipeline():
         payload = request.get_json(silent=True) or {}
-        extract_mode = str(payload.get("extractMode", "surveycto")).strip().lower() or "surveycto"
-        if extract_mode not in {"surveycto", "csv"}:
-            return jsonify({"error": "extractMode must be either 'surveycto' or 'csv'."}), 400
-
-        pipeline_status = get_pipeline_repo_status()
+        try:
+            version = normalize_pipeline_version(payload.get("pipelineVersion", "V3"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        extract_mode = "surveycto" if version == "V3" else "configured"
+        pipeline_status = get_pipeline_repo_status(version)
         run_id = insert_pipeline_run(
             db_path,
             status="running",
             extract_mode=extract_mode,
+            pipeline_version=version,
             started_at=datetime.now(tz=timezone.utc).isoformat(),
             triggered_by_email=getattr(current_user, "email", None),
             triggered_by_name=getattr(current_user, "full_name", None),
             pipeline_branch=pipeline_status.get("branch"),
             pipeline_commit_before=pipeline_status.get("commit"),
-            message="Pipeline execution started.",
+            message=f"{version} pipeline execution started.",
         )
 
         thread = Thread(
@@ -159,13 +178,15 @@ def create_app() -> Flask:
                 "db_path": db_path,
                 "run_id": run_id,
                 "extract_mode": extract_mode,
+                "pipeline_version": version,
                 "triggered_by_email": getattr(current_user, "email", None),
                 "triggered_by_name": getattr(current_user, "full_name", None),
             },
             daemon=True,
         )
         thread.start()
-        return jsonify({"run_id": run_id, "status": "running", "message": "Pipeline execution started."}), 202
+        return jsonify({"run_id": run_id, "status": "running", "pipeline_version": version,
+                        "message": f"{version} pipeline execution started."}), 202
 
     @app.get("/api/pipeline/runs/<int:run_id>")
     @auth_required("session")
@@ -173,6 +194,8 @@ def create_app() -> Flask:
         run = fetch_pipeline_run(db_path, run_id)
         if run is None:
             return jsonify({"error": "Pipeline run not found."}), 404
+        if not current_user.has_role("admin"):
+            run.pop("run_log", None)
         return jsonify(run)
 
     @app.get("/api/pipeline/status")
@@ -180,7 +203,10 @@ def create_app() -> Flask:
     @roles_required("admin")
     def pipeline_status():
         try:
-            return jsonify(get_pipeline_repo_status())
+            version = normalize_pipeline_version(request.args.get("pipelineVersion", "V3"))
+            return jsonify(get_pipeline_repo_status(version))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -189,9 +215,13 @@ def create_app() -> Flask:
     @roles_required("admin")
     def pipeline_pull():
         try:
-            result = pull_pipeline_repo()
+            payload = request.get_json(silent=True) or {}
+            version = normalize_pipeline_version(payload.get("pipelineVersion", "V3"))
+            result = pull_pipeline_repo(version)
             status_code = 200 if result["status"] in {"completed", "blocked"} else 500
             return jsonify(result), status_code
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -485,16 +515,15 @@ def _filter_project_file_uploads(
     allowed_survey_names = {
         str(survey.get("survey_name") or "")
         for survey in surveys
-        if _survey_project_access_key(survey) in allowed_project_refs
+        if survey.get("pipeline_version", "V3") == "V3" and _survey_project_access_key(survey) in allowed_project_refs
     }
     allowed_project_file_slugs = {_slugify_project_file_name(name) for name in allowed_survey_names if name}
-    if not allowed_project_file_slugs:
-        return []
-
     return [
         upload
         for upload in project_data_uploads
-        if _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs
+        if (upload.get("pipeline_version") == "V2" and upload.get("project_key") in allowed_project_refs)
+        or (upload.get("pipeline_version", "V3") == "V3"
+            and _project_file_slug(upload.get("file_name") or _upload_relative_path(upload)) in allowed_project_file_slugs)
     ]
 
 
@@ -572,10 +601,13 @@ def _prune_powerbi_selections(db_path, reports: list[dict]) -> None:
 
 
 def _survey_project_access_key(survey: dict) -> str:
-    return str(survey.get("survey_name") or "")
+    return str(survey.get("project_key") or survey.get("survey_name") or "")
 
 
 def _is_project_data_upload(upload: dict) -> bool:
+    if upload.get("pipeline_version") == "V2":
+        parts = str(upload.get("relative_path") or "").split("/")
+        return bool(upload.get("is_project_data")) and len(parts) >= 4 and parts[2] == "data"
     relative_path = f"/{_upload_relative_path(upload).lower().strip('/')}/"
     return f"/{PROJECT_DATA_UPLOAD_FOLDER}/" in relative_path
 

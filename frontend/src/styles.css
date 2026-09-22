@@ -2051,3 +2051,31 @@ tbody tr:hover,
     grid-template-columns: 1fr;
   }
 }
+.pipeline-version-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  background: #eaf1f8;
+  color: #234664;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.survey-source-label {
+  display: block;
+  margin-top: 0.2rem;
+  color: #526663;
+  font-size: 0.8rem;
+  white-space: normal;
+}
+
+.pipeline-version-badge[data-version="V2"] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pipeline-version-badge[data-version="V3"] {
+  background: #dcfce7;
+  color: #166534;
+}

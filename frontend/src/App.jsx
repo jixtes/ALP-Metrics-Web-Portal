@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import PipelineVersionSelect from "./components/PipelineVersionSelect.jsx";
+import { groupProjectFiles } from "./dataFiles.js";
 import alpLogo from "./assets/alp-logo.png";
 import ifcLogo from "./assets/ifc-logo.svg";
 
@@ -10,6 +12,7 @@ const DASHBOARD_TABLE_PAGE_SIZE = 10;
 
 const emptyDashboard = {
   latest_run: null,
+  latest_runs: {},
   surveys: [],
   uploads: [],
 };
@@ -24,6 +27,7 @@ const settingsSections = [
 
 const surveyColumns = [
   { key: "survey_name", label: "Surveys", type: "text" },
+  { key: "pipeline_version", label: "Version", type: "text" },
   { key: "project_ref", label: "Project", type: "text" },
   { key: "country", label: "Country", type: "text" },
   { key: "client", label: "Client", type: "text" },
@@ -33,7 +37,7 @@ const surveyColumns = [
 ];
 
 const uploadColumns = [
-  { key: "file_name", label: "File", type: "text" },
+  { key: "file_name", label: "Project / file", type: "text" },
   { key: "web_url", label: "Link", type: "text" },
   { key: "uploaded_at", label: "Uploaded", type: "date" },
 ];
@@ -455,7 +459,17 @@ function App() {
   const [pipelineMessage, setPipelineMessage] = useState("");
   const [isPipelineStatusLoading, setIsPipelineStatusLoading] = useState(false);
   const [isPullingPipeline, setIsPullingPipeline] = useState(false);
-  const [mode, setMode] = useState("surveycto");
+  const [pipelineVersion, setPipelineVersion] = useState("V3");
+  const pipelineVersionRef = useRef("V3");
+
+  function selectPipelineVersion(version) {
+    pipelineVersionRef.current = version;
+    setPipelineVersion(version);
+    setPipelineStatus(null);
+    setPipelineOutput("");
+    setPipelineError("");
+    setPipelineMessage("");
+  }
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
   const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
@@ -808,8 +822,8 @@ function App() {
     setPipelineError("");
 
     try {
-      const data = await apiRequest("/api/pipeline/status");
-      setPipelineStatus(data);
+      const data = await apiRequest(`/api/pipeline/status?pipelineVersion=${pipelineVersion}`);
+      if (pipelineVersionRef.current === pipelineVersion) setPipelineStatus(data);
     } catch (loadError) {
       setPipelineStatus(null);
       setPipelineError(loadError.message);
@@ -986,6 +1000,7 @@ function App() {
     canManagePowerBI,
     canManagePipeline,
     savedReportIds,
+    pipelineVersion,
   ]);
 
   useEffect(() => {
@@ -1139,7 +1154,7 @@ function App() {
     try {
       const runData = await apiRequest("/api/pipeline/run", {
         method: "POST",
-        body: { extractMode: mode },
+        body: { pipelineVersion },
       });
       const runId = runData.run_id;
       let completedRun = null;
@@ -1155,10 +1170,10 @@ function App() {
         setError("The update is still running. Refresh manually later to check the result.");
         return;
       }
-      if (completedRun.status === "failed") {
+      await refreshPipelineView();
+      if (["failed", "partial"].includes(completedRun.status)) {
         setError(completedRun.message || "The update failed.");
       }
-      await refreshPipelineView();
     } catch (runError) {
       setError(runError.message);
     } finally {
@@ -1184,6 +1199,7 @@ function App() {
     try {
       const data = await apiRequest("/api/pipeline/pull", {
         method: "POST",
+        body: { pipelineVersion },
       });
       setPipelineStatus(data.after ?? data.before ?? null);
       setPipelineOutput(data.output || "No output returned.");
@@ -1818,6 +1834,8 @@ function App() {
       survey.phase,
       survey.project_ref,
       survey.assessor,
+      survey.pipeline_version,
+      survey.source_survey,
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedFilter));
@@ -1834,10 +1852,10 @@ function App() {
     activeSurveyPage * DASHBOARD_TABLE_PAGE_SIZE,
   );
   const normalizedUploadFilter = uploadFilter.trim().toLowerCase();
-  const uploadsWithFolders = dashboard.uploads.map((item) => ({
+  const uploadsWithFolders = groupProjectFiles(dashboard.uploads.map((item) => ({
     ...item,
     folder: getSharePointFolder(item),
-  }));
+  })));
   const uploadFolderOptions = [...new Set(uploadsWithFolders.map((item) => item.folder).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right),
   );
@@ -1913,8 +1931,10 @@ function App() {
     activeRolePage * SETTINGS_TABLE_PAGE_SIZE,
   );
 
+  const selectedPipelineRun = dashboard.latest_runs?.[pipelineVersion] ??
+    (dashboard.latest_run?.pipeline_version === pipelineVersion ? dashboard.latest_run : null);
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
-  const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => survey.project_ref).filter(Boolean)).size;
+  const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => `${survey.pipeline_version}:${survey.project_ref || survey.project_key}`)).size;
   const totalSubmissions = dashboard.surveys.reduce((sum, survey) => sum + survey.submission_count, 0);
   const lastSubmissionAt = dashboard.surveys.reduce((latest, survey) => {
     const candidate = survey.last_submission_at;
@@ -1958,9 +1978,11 @@ function App() {
   const entityTypeTotals = formatList(selectedPreview.entity_type_totals ?? selectedPreview.most_entity_types ?? []);
   const mostTargetGroups = formatList(selectedPreview.most_target_groups ?? []);
   const enabledModules = buildEnabledModules(selectedSurvey);
-  const projectOptions = [...new Set(dashboard.surveys.map((survey) => survey.survey_name).filter(Boolean))].sort((left, right) =>
-    left.localeCompare(right),
-  );
+  const projectLabels = Object.fromEntries(dashboard.surveys.map((survey) => [
+    survey.project_key || survey.survey_name,
+    `${survey.survey_name} (${survey.pipeline_version || "V3"})`,
+  ]));
+  const projectOptions = Object.keys(projectLabels).sort((left, right) => projectLabels[left].localeCompare(projectLabels[right]));
   const selectedUserRole = roles.find((role) => role.name === newUserForm.role) ?? null;
   const isUserProjectSpecific = selectedUserRole?.projectScope === "restricted";
   const projectSpecificPowerBIReports = availableReports.filter(
@@ -2408,7 +2430,7 @@ function App() {
                           return (
                             <label
                               key={projectRef}
-                              title={projectRef}
+                              title={projectLabels[projectRef]}
                               className={`report-picker-item role-project-picker-item${
                                 isChecked ? " report-picker-item-active" : ""
                               }`}
@@ -2419,7 +2441,7 @@ function App() {
                                 onChange={() => toggleUserProjectAccess(projectRef)}
                               />
                               <div>
-                                <strong>{projectRef}</strong>
+                                <strong>{projectLabels[projectRef]}</strong>
                               </div>
                             </label>
                           );
@@ -2629,15 +2651,19 @@ function App() {
             {activeSettingsSection === "pipeline" ? (
               canManagePipeline ? (
                 <div className="settings-stack">
+                  <div className="filter-row">
+                    <PipelineVersionSelect id="settings-pipeline-version" value={pipelineVersion} onChange={selectPipelineVersion}
+                      disabled={isRunning || isPullingPipeline} />
+                  </div>
                   <div className="settings-actions">
                     <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isRunning}>
-                      {isPullingPipeline ? "Pulling pipeline..." : "Pull latest pipeline code"}
+                      {isPullingPipeline ? "Pulling pipeline..." : `Pull latest ${pipelineVersion} code`}
                     </button>
                     <button type="button" className="secondary-button" onClick={handleRefreshPipelineStatus} disabled={isPipelineStatusLoading}>
                       {isPipelineStatusLoading ? "Refreshing..." : "Refresh status"}
                     </button>
                     <button type="button" className="secondary-button" onClick={handleRunPipeline} disabled={isRunning}>
-                      {isRunning ? "Running pipeline..." : "Run pipeline now"}
+                      {isRunning ? "Running pipeline..." : `Run ${pipelineVersion} now`}
                     </button>
                   </div>
 
@@ -2651,40 +2677,41 @@ function App() {
                     </div>
                   ) : null}
 
-                  {dashboard.latest_run ? (
+                  {selectedPipelineRun ? (
                     <div className="detail-section-block">
                       <div className="settings-summary">
                         <div className="stat-card compact-stat-card">
                           <span>Run commit</span>
-                          <strong>{dashboard.latest_run.pipeline_commit_after?.slice(0, 7) || "N/A"}</strong>
+                          <strong>{selectedPipelineRun.pipeline_commit_after?.slice(0, 7) || "N/A"}</strong>
                           <p className="commit-card-meta">
-                            Branch: {dashboard.latest_run.pipeline_branch || pipelineStatus?.branch || "N/A"}
+                            Branch: {selectedPipelineRun.pipeline_branch || pipelineStatus?.branch || "N/A"}
                           </p>
                           <p className="commit-card-meta">
-                            {dashboard.latest_run.pipeline_commit_subject || "Commit message unavailable."}
+                            {selectedPipelineRun.pipeline_commit_subject || "Commit message unavailable."}
                           </p>
                           <p className="commit-card-meta">
-                            {formatDate(dashboard.latest_run.pipeline_commit_at)}
-                            {dashboard.latest_run.pipeline_commit_author
-                              ? ` by ${dashboard.latest_run.pipeline_commit_author}`
+                            {formatDate(selectedPipelineRun.pipeline_commit_at)}
+                            {selectedPipelineRun.pipeline_commit_author
+                              ? ` by ${selectedPipelineRun.pipeline_commit_author}`
                               : ""}
                           </p>
                         </div>
                         <div className="stat-card compact-stat-card">
                           <span>Last run</span>
                           <strong>
-                            {dashboard.latest_run.status === "running"
+                            {selectedPipelineRun.status === "running"
                               ? "In progress"
-                              : formatDate(dashboard.latest_run.completed_at)}
+                              : formatDate(selectedPipelineRun.completed_at)}
                           </strong>
                           <p className="commit-card-meta">
                             Triggered by:{" "}
-                            {dashboard.latest_run.triggered_by_name || dashboard.latest_run.triggered_by_email || "N/A"}
+                            {selectedPipelineRun.triggered_by_name || selectedPipelineRun.triggered_by_email || "N/A"}
                           </p>
                         </div>
                       </div>
-                      {dashboard.latest_run.run_log ? (
-                        <pre className="pipeline-log pipeline-log-spaced">{dashboard.latest_run.run_log}</pre>
+                      <p className="run-meta">{selectedPipelineRun.message}</p>
+                      {selectedPipelineRun.run_log ? (
+                        <pre className="pipeline-log pipeline-log-spaced">{selectedPipelineRun.run_log}</pre>
                       ) : null}
                     </div>
                   ) : null}
@@ -3001,7 +3028,7 @@ function App() {
                                         return (
                                           <label
                                             key={projectRef}
-                                            title={projectRef}
+                                            title={projectLabels[projectRef]}
                                             className={`report-picker-item role-project-picker-item${
                                               isProjectChecked ? " report-picker-item-active" : ""
                                             }`}
@@ -3012,7 +3039,7 @@ function App() {
                                               onChange={() => togglePowerBIReportProject(report.id, projectRef)}
                                             />
                                             <div>
-                                              <strong>{projectRef}</strong>
+                                              <strong>{projectLabels[projectRef]}</strong>
                                             </div>
                                           </label>
                                         );
@@ -3105,22 +3132,19 @@ function App() {
         </div>
 
         <div className="run-panel">
-          <label htmlFor="extract-mode">Data source</label>
-          <select id="extract-mode" value={mode} onChange={(event) => setMode(event.target.value)} disabled={!canRunPipeline}>
-            <option value="surveycto">SurveyCTO</option>
-            <option value="csv">Local CSV</option>
-          </select>
+          <PipelineVersionSelect id="pipeline-version" value={pipelineVersion} onChange={selectPipelineVersion}
+            disabled={!canRunPipeline || isRunning || isPullingPipeline} />
           <button type="button" onClick={handleRunPipeline} disabled={isRunning || !canRunPipeline}>
-            {isRunning ? "Updating data..." : "Update data"}
+            {isRunning ? "Updating..." : "Update data"}
           </button>
           <p className="run-meta">
-            Last updated by: {dashboard.latest_run?.triggered_by_name || dashboard.latest_run?.triggered_by_email || "N/A"}
+            Last updated by: {selectedPipelineRun?.triggered_by_name || selectedPipelineRun?.triggered_by_email || "N/A"}
           </p>
           <p className="run-meta">
             Last updated at:{" "}
-            {dashboard.latest_run?.status === "running"
+            {selectedPipelineRun?.status === "running"
               ? "In progress"
-              : formatDate(dashboard.latest_run?.completed_at)}
+              : formatDate(selectedPipelineRun?.completed_at)}
           </p>
         </div>
       </section>
@@ -3175,6 +3199,7 @@ function App() {
                       <div>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
+                        <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{selectedSurvey.source_survey ? ` · ${selectedSurvey.source_survey}` : ""}</p>
                       </div>
                     </div>
 
@@ -3388,9 +3413,14 @@ function App() {
                               onClick={() => setSelectedSurveyId(survey.id)}
                               title="Click to see the survey overview"
                             >
-                              <td data-label="Survey">{survey.survey_name}</td>
+                              <td data-label="Survey">
+                                {survey.survey_name}
+                                {selectedSurvey ? <span className="pipeline-version-badge" data-version={survey.pipeline_version || "V3"}>{survey.pipeline_version || "V3"}</span> : null}
+                                {survey.source_survey ? <span className="survey-source-label">{survey.source_survey}</span> : null}
+                              </td>
                               {!selectedSurvey ? (
                                 <>
+                                  <td data-label="Version">{survey.pipeline_version || "V3"}</td>
                                   <td data-label="Project">{survey.project_ref || "N/A"}</td>
                                   <td data-label="Country">{survey.country || "N/A"}</td>
                                   <td data-label="Client">{survey.client || "N/A"}</td>
@@ -3442,12 +3472,12 @@ function App() {
               <section className="survey-split-column survey-split-column-list">
                 <div className="section-heading">
                   <h2>Data files</h2>
-                  <p>Files produced by the latest pipeline run and their upload status.</p>
+                  <p>V2 project data folders and V3 files with their upload status.</p>
                 </div>
 
                 <div className="filter-row">
                   <div className="filter-heading">
-                    <span>Number of files: {sortedUploads.length}</span>
+                    <span>Number of entries: {sortedUploads.length}</span>
                   </div>
                   <input
                     id="upload-filter"
@@ -3472,8 +3502,8 @@ function App() {
                   </select>
                 </div>
 
-                {dashboard.uploads.length === 0 ? (
-                  <div className="table-empty">No uploads recorded for the latest run.</div>
+                {uploadsWithFolders.length === 0 ? (
+                  <div className="table-empty">No uploads recorded yet.</div>
                 ) : filteredUploads.length === 0 ? (
                   <div className="table-empty">No uploads match the current filter.</div>
                 ) : (
@@ -3506,7 +3536,7 @@ function App() {
 
                           return (
                             <tr key={item.id} className="data-file-row">
-                              <td data-label="File" className="upload-file-cell">
+                              <td data-label="Project / file" className="upload-file-cell">
                                 <div className="upload-file-row">
                                   <span
                                     className={`upload-status-icon upload-status-icon-${statusDetails.tone}`}
@@ -3516,13 +3546,19 @@ function App() {
                                     {statusDetails.icon}
                                   </span>
                                   <span className="upload-file-copy">
-                                    <span className="upload-file-name">{item.file_name}</span>
+                                    <span className="upload-file-name">{item.file_name} <span className="pipeline-version-badge" data-version={item.pipeline_version || "V3"}>{item.pipeline_version || "V3"}</span></span>
                                     <span className="upload-file-path">{formatFolderPath(item.folder)}</span>
                                   </span>
                                 </div>
                               </td>
                               <td data-label="Link">
-                                {item.web_url ? (
+                                {item.pipeline_version === "V2" ? (
+                                  item.data_folders.length ? item.data_folders.map((folder) => (
+                                    <a key={folder.url} className="sharepoint-link-button" href={folder.url} target="_blank" rel="noreferrer">
+                                      {item.data_folders.length === 1 ? "Open data folder" : `Open ${folder.name} data folder`}
+                                    </a>
+                                  )) : "N/A"
+                                ) : item.web_url ? (
                                   <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
                                     <span className="sharepoint-link-mark" aria-hidden="true">
                                     </span>
@@ -3541,7 +3577,7 @@ function App() {
                     {sortedUploads.length > DASHBOARD_TABLE_PAGE_SIZE ? (
                       <div className="table-pagination">
                         <span>
-                          Page {activeUploadPage} of {uploadPageCount} · {sortedUploads.length} files
+                          Page {activeUploadPage} of {uploadPageCount} · {sortedUploads.length} entries
                         </span>
                         <div className="table-pagination-actions">
                           <button

@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager, nullcontext
+from collections.abc import Iterator
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 
-def connect_database(db_path: Path) -> sqlite3.Connection:
+@contextmanager
+def connect_database(db_path: Path) -> Iterator[sqlite3.Connection]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def initialize_database(db_path: Path) -> None:
@@ -106,6 +113,17 @@ def initialize_database(db_path: Path) -> None:
         _ensure_column(connection, "pipeline_runs", "run_log", "TEXT")
         _ensure_column(connection, "powerbi_report_selections", "project_scope", "TEXT NOT NULL DEFAULT 'all'")
         _ensure_column(connection, "powerbi_report_selections", "allowed_project_refs_json", "TEXT NOT NULL DEFAULT '[]'")
+        for table in ("pipeline_runs", "survey_summaries", "survey_records", "pipeline_uploads"):
+            _ensure_column(connection, table, "pipeline_version", "TEXT NOT NULL DEFAULT 'V3'")
+        for table in ("survey_summaries", "pipeline_uploads"):
+            for name in ("source_key", "project_key"):
+                _ensure_column(connection, table, name, "TEXT NOT NULL DEFAULT ''")
+        for name in ("instance_key", "source_survey", "data_folder_url"):
+            _ensure_column(connection, "survey_summaries", name, "TEXT")
+        for name in ("relative_path", "folder_web_url"):
+            _ensure_column(connection, "pipeline_uploads", name, "TEXT")
+        _ensure_column(connection, "pipeline_uploads", "is_project_data", "INTEGER NOT NULL DEFAULT 0")
+        connection.execute("UPDATE survey_summaries SET project_key = survey_name, source_key = survey_name, instance_key = survey_name WHERE pipeline_version = 'V3' AND project_key = ''")
         connection.execute("DELETE FROM survey_records")
         connection.commit()
 
@@ -121,15 +139,16 @@ def insert_pipeline_run(
     pipeline_branch: str | None = None,
     pipeline_commit_before: str | None = None,
     message: str | None = None,
+    pipeline_version: str = "V3",
 ) -> int:
     with connect_database(db_path) as connection:
         cursor = connection.execute(
             """
             INSERT INTO pipeline_runs (
                 status, extract_mode, started_at, triggered_by_email, triggered_by_name,
-                pipeline_branch, pipeline_commit_before, message
+                pipeline_branch, pipeline_commit_before, message, pipeline_version
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 status,
@@ -140,6 +159,7 @@ def insert_pipeline_run(
                 pipeline_branch,
                 pipeline_commit_before,
                 message,
+                pipeline_version,
             ),
         )
         connection.commit()
@@ -165,82 +185,91 @@ def complete_pipeline_run(
             """,
             (status, completed_at, message, pipeline_commit_after, run_log, run_id),
         )
+        connection.execute(
+            "UPDATE pipeline_runs SET row_count = (SELECT COALESCE(SUM(submission_count), 0) FROM survey_summaries WHERE run_id = ?), survey_count = (SELECT COUNT(*) FROM survey_summaries WHERE run_id = ?) WHERE id = ?",
+            (run_id, run_id, run_id),
+        )
         connection.commit()
 
 
-def replace_run_snapshot(
-    db_path: Path,
-    *,
-    run_id: int,
-    survey_rows: list[dict[str, Any]],
-    record_rows: list[dict[str, Any]],
-) -> None:
-    with connect_database(db_path) as connection:
-        connection.execute("DELETE FROM survey_summaries")
-        connection.execute("DELETE FROM survey_records")
+def _delete_snapshot_scope(connection, table: str, version: str, source_keys: list[str] | None) -> None:
+    if version not in {"V2", "V3"}:
+        raise ValueError("Unknown pipeline version.")
+    if source_keys is None:
+        connection.execute(f"DELETE FROM {table} WHERE pipeline_version = ?", (version,))
+    elif source_keys:
+        placeholders = ",".join("?" for _ in source_keys)
+        connection.execute(f"DELETE FROM {table} WHERE pipeline_version = ? AND source_key IN ({placeholders})",
+                           (version, *source_keys))
 
-        connection.executemany(
+
+def replace_run_snapshot(db_path: Path, *, run_id: int, survey_rows: list[dict[str, Any]],
+                         record_rows: list[dict[str, Any]], pipeline_version: str = "V3",
+                         source_keys: list[str] | None = None, connection=None) -> None:
+    own_connection = connection is None
+    with connect_database(db_path) if own_connection else nullcontext(connection) as conn:
+        _delete_snapshot_scope(conn, "survey_summaries", pipeline_version, source_keys)
+        # Only aggregate summaries are retained; respondent previews remain disabled.
+        conn.execute("DELETE FROM survey_records WHERE pipeline_version = ?", (pipeline_version,))
+        conn.executemany(
             """
             INSERT INTO survey_summaries (
-                run_id, survey_name, project_ref, project_label, client, country, phase, cohort, assessor,
+                run_id, pipeline_version, source_key, instance_key, project_key, source_survey, data_folder_url,
+                survey_name, project_ref, project_label, client, country, phase, cohort, assessor,
                 trc, fpa, blr, submission_count, first_submission_at, last_submission_at, preview_json
             ) VALUES (
-                :run_id, :survey_name, :project_ref, :project_label, :client, :country, :phase, :cohort, :assessor,
+                :run_id, :pipeline_version, :source_key, :instance_key, :project_key, :source_survey, :data_folder_url,
+                :survey_name, :project_ref, :project_label, :client, :country, :phase, :cohort, :assessor,
                 :trc, :fpa, :blr, :submission_count, :first_submission_at, :last_submission_at, :preview_json
             )
             """,
-            [
-                {
-                    **row,
-                    "run_id": run_id,
-                    "preview_json": json.dumps(row["preview"], default=str),
-                }
-                for row in survey_rows
-            ],
+            [{**row, "run_id": run_id, "pipeline_version": pipeline_version,
+              "source_key": row.get("source_key", row["survey_name"]),
+              "instance_key": row.get("instance_key", row["survey_name"]),
+              "project_key": row.get("project_key", row["survey_name"]),
+              "source_survey": row.get("source_survey"), "data_folder_url": row.get("data_folder_url"),
+              "preview_json": json.dumps(row["preview"], default=str)} for row in survey_rows],
         )
-
-        connection.executemany(
-            """
-            INSERT INTO survey_records (
-                run_id, survey_name, submission_key, submission_date, enumerator, respondent_name,
-                country, entity_type, target_group, raw_preview_json
-            ) VALUES (
-                :run_id, :survey_name, :submission_key, :submission_date, :enumerator, :respondent_name,
-                :country, :entity_type, :target_group, :raw_preview_json
-            )
-            """,
-            [
-                {
-                    **row,
-                    "run_id": run_id,
-                    "raw_preview_json": json.dumps(row["preview"], default=str),
-                }
-                for row in record_rows
-            ],
-        )
-        connection.commit()
+        if own_connection:
+            conn.commit()
 
 
-def replace_run_uploads(
-    db_path: Path,
-    *,
-    run_id: int,
-    upload_rows: list[dict[str, Any]],
-) -> None:
-    with connect_database(db_path) as connection:
-        connection.execute("DELETE FROM pipeline_uploads")
-        connection.executemany(
+def replace_run_uploads(db_path: Path, *, run_id: int, upload_rows: list[dict[str, Any]],
+                       pipeline_version: str = "V3", source_keys: list[str] | None = None,
+                       connection=None) -> None:
+    own_connection = connection is None
+    with connect_database(db_path) if own_connection else nullcontext(connection) as conn:
+        _delete_snapshot_scope(conn, "pipeline_uploads", pipeline_version, source_keys)
+        conn.executemany(
             """
             INSERT INTO pipeline_uploads (
-                run_id, file_name, local_path, sharepoint_path, status,
-                uploaded_at, web_url, message
+                run_id, pipeline_version, source_key, project_key, relative_path, folder_web_url, is_project_data,
+                file_name, local_path, sharepoint_path, status, uploaded_at, web_url, message
             ) VALUES (
-                :run_id, :file_name, :local_path, :sharepoint_path, :status,
-                :uploaded_at, :web_url, :message
+                :run_id, :pipeline_version, :source_key, :project_key, :relative_path, :folder_web_url, :is_project_data,
+                :file_name, :local_path, :sharepoint_path, :status, :uploaded_at, :web_url, :message
             )
             """,
-            [{**row, "run_id": run_id} for row in upload_rows],
+            [{**row, "run_id": run_id, "pipeline_version": pipeline_version,
+              "source_key": row.get("source_key", ""), "project_key": row.get("project_key", ""),
+              "relative_path": row.get("relative_path"), "folder_web_url": row.get("folder_web_url"),
+              "is_project_data": int(bool(row.get("is_project_data"))), "message": row.get("message")}
+             for row in upload_rows],
         )
+        if own_connection:
+            conn.commit()
+
+
+def publish_run_snapshot(db_path: Path, *, run_id: int, pipeline_version: str,
+                         survey_rows: list[dict[str, Any]], record_rows: list[dict[str, Any]],
+                         upload_rows: list[dict[str, Any]], source_keys: list[str] | None = None) -> None:
+    """Replace summaries and files together, preserving other pipeline sources."""
+    with connect_database(db_path) as connection:
+        replace_run_snapshot(db_path, run_id=run_id, pipeline_version=pipeline_version,
+                             survey_rows=survey_rows, record_rows=record_rows,
+                             source_keys=source_keys, connection=connection)
+        replace_run_uploads(db_path, run_id=run_id, pipeline_version=pipeline_version,
+                           upload_rows=upload_rows, source_keys=source_keys, connection=connection)
         connection.commit()
 
 
@@ -248,9 +277,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
     with connect_database(db_path) as connection:
         latest_run = connection.execute(
             """
-            SELECT id, status, extract_mode, started_at, triggered_by_email, triggered_by_name,
-                   completed_at, message, pipeline_branch,
-                   pipeline_commit_before, pipeline_commit_after, run_log
+            SELECT *
             FROM pipeline_runs
             ORDER BY id DESC
             LIMIT 1
@@ -259,8 +286,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
 
         summary_rows = connection.execute(
             """
-            SELECT id, survey_name, project_ref, project_label, client, country, phase, cohort, assessor,
-                   trc, fpa, blr, submission_count, first_submission_at, last_submission_at, preview_json
+            SELECT *
             FROM survey_summaries
             ORDER BY submission_count DESC, survey_name ASC
             """
@@ -268,13 +294,18 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
 
         upload_rows = connection.execute(
             """
-            SELECT id, file_name, local_path, sharepoint_path, status, uploaded_at, web_url, message
+            SELECT *
             FROM pipeline_uploads
             ORDER BY id ASC
             """
         ).fetchall()
 
+        latest_runs = {version: _decode_row(connection.execute(
+            "SELECT * FROM pipeline_runs WHERE pipeline_version = ? AND extract_mode != 'surveycto_test' ORDER BY id DESC LIMIT 1",
+            (version,),
+        ).fetchone()) for version in ("V2", "V3")}
         return {
+            "latest_runs": latest_runs,
             "latest_run": _decode_row(latest_run),
             "surveys": [_decode_summary(row) for row in summary_rows],
             "uploads": [_decode_row(row) for row in upload_rows],
@@ -285,9 +316,7 @@ def fetch_pipeline_run(db_path: Path, run_id: int) -> dict[str, Any] | None:
     with connect_database(db_path) as connection:
         row = connection.execute(
             """
-            SELECT id, status, extract_mode, started_at, triggered_by_email, triggered_by_name,
-                   completed_at, message, pipeline_branch,
-                   pipeline_commit_before, pipeline_commit_after, run_log
+            SELECT *
             FROM pipeline_runs
             WHERE id = ?
             """,
