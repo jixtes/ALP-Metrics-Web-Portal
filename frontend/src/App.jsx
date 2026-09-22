@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import PipelineVersionSelect from "./components/PipelineVersionSelect.jsx";
 import { groupProjectFiles } from "./dataFiles.js";
+import { createPowerBIReportSession } from "./powerbiSession.js";
 import alpLogo from "./assets/alp-logo.png";
 import ifcLogo from "./assets/ifc-logo.svg";
 
@@ -254,10 +255,13 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true }) {
+function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isActive = true }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
   const embeddedReportRef = useRef(null);
+  const checkTokenRef = useRef(null);
+  const renewTokenRef = useRef(renewToken);
+  renewTokenRef.current = renewToken;
   const [embedError, setEmbedError] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -278,6 +282,7 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true
 
   useEffect(() => {
     if (!isActive) return;
+    checkTokenRef.current?.();
     const frame = window.requestAnimationFrame(() => {
       applyReportFit(document.fullscreenElement === cardRef.current);
       window.dispatchEvent(new Event("resize"));
@@ -306,8 +311,14 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true
       return undefined;
     }
 
-    let activeService;
+    const container = embedContainerRef.current;
+    let session;
+    let interval;
     let isCancelled = false;
+
+    function checkToken() {
+      if (!document.hidden) session?.check();
+    }
 
     async function embedReport() {
       const powerbi = await loadPowerBIClient();
@@ -315,49 +326,58 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true
       if (!models) {
         throw new Error("Power BI SDK models are unavailable in the browser.");
       }
-      if (isCancelled || !embedContainerRef.current) {
-        return;
-      }
+      if (isCancelled) return;
 
-      activeService = powerbi;
-      setEmbedError("");
-      powerbi.reset(embedContainerRef.current);
-      embeddedReportRef.current = powerbi.embed(embedContainerRef.current, {
-        type: report.type,
-        tokenType: models.TokenType.Embed,
-        accessToken: report.accessToken,
-        embedUrl: report.embedUrl,
-        id: report.reportId,
-        settings: {
-          layoutType: models.LayoutType.Custom,
-          customLayout: {
-            displayOption: models.DisplayOption.FitToWidth,
-          },
-          panes: {
-            filters: {
-              visible: false,
+      session = createPowerBIReportSession({
+        report,
+        renew: (reportId) => renewTokenRef.current(reportId),
+        onError: setEmbedError,
+        reset: () => {
+          powerbi.reset(container);
+          embeddedReportRef.current = null;
+        },
+        embed: (config) => {
+          powerbi.reset(container);
+          embeddedReportRef.current = powerbi.embed(container, {
+            type: config.type,
+            tokenType: models.TokenType.Embed,
+            accessToken: config.accessToken,
+            embedUrl: config.embedUrl,
+            id: config.reportId,
+            settings: {
+              layoutType: models.LayoutType.Custom,
+              customLayout: {
+                displayOption: document.fullscreenElement === cardRef.current
+                  ? models.DisplayOption.FitToPage : models.DisplayOption.FitToWidth,
+              },
+              panes: {
+                filters: { visible: false },
+                pageNavigation: { visible: true },
+              },
+              background: models.BackgroundType.Transparent,
             },
-            pageNavigation: {
-              visible: true,
-            },
-          },
-          background: models.BackgroundType.Transparent,
+          });
+          return embeddedReportRef.current;
         },
       });
+      checkTokenRef.current = checkToken;
+      interval = window.setInterval(checkToken, 30000);
+      document.addEventListener("visibilitychange", checkToken);
+      window.addEventListener("focus", checkToken);
+      await session.check();
     }
 
     embedReport().catch((error) => {
-      if (!isCancelled) {
-        setEmbedError(error.message);
-      }
+      if (!isCancelled) setEmbedError(error.message);
     });
 
     return () => {
       isCancelled = true;
-      if (activeService && embedContainerRef.current) {
-        activeService.reset(embedContainerRef.current);
-      }
-      embeddedReportRef.current = null;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", checkToken);
+      window.removeEventListener("focus", checkToken);
+      checkTokenRef.current = null;
+      session?.dispose();
     };
   }, [report]);
 
@@ -397,7 +417,7 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true
 
       {report.error ? <div className="table-empty">{report.error}</div> : null}
       {embedError ? <div className="table-empty">{embedError}</div> : null}
-      {!report.error && !embedError ? (
+      {!report.error ? (
         <div className="powerbi-frame-shell">
           <div className="powerbi-frame" ref={embedContainerRef} />
         </div>
@@ -450,6 +470,7 @@ function toFriendlyLoginError(error) {
 function App() {
   const settingsSectionHeadingRef = useRef(null);
   const dashboardTabShellRef = useRef(null);
+  const embedTokenRequestsRef = useRef(new Map());
   const [routePath, setRoutePath] = useState(window.location.pathname);
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -762,6 +783,33 @@ function App() {
     }
   }
 
+  async function renewPowerBIToken(reportId, individual = false) {
+    const path = individual
+      ? "/api/powerbi/individual-report"
+      : `/api/powerbi/embed-configs${accessPreviewQuery(accessPreviewParams)}`;
+    // Reports expiring together share one authorized backend request. Keep the
+    // existing report objects intact so other mounted iframes are preserved.
+    const requests = embedTokenRequestsRef.current;
+    let request = requests.get(path);
+    if (!request) {
+      request = apiRequest(path);
+      requests.set(path, request);
+    }
+    let data;
+    try {
+      data = await request;
+    } finally {
+      if (requests.get(path) === request) requests.delete(path);
+    }
+    const fresh = individual ? data : data.reports?.find((item) => item.reportId === reportId);
+    if (!fresh) {
+      const error = new Error("You no longer have access to this Power BI report.");
+      error.status = 403;
+      throw error;
+    }
+    return fresh;
+  }
+
   async function loadIndividualReport() {
     setIsIndividualReportLoading(true);
     setIndividualReportError("");
@@ -939,6 +987,7 @@ function App() {
       loadDashboard();
       loadEmbeddedPowerBIState();
     } else {
+      embedTokenRequestsRef.current.clear();
       setDashboard(emptyDashboard);
       setEmbeddedReports([]);
       setVisitedPowerBIReports([]);
@@ -2179,7 +2228,7 @@ function App() {
 
         {isIndividualReportLoading ? <section className="table-empty">Loading your report...</section> : null}
         {individualReportError ? <section className="alert-card">{individualReportError}</section> : null}
-        {individualReport ? <EmbeddedPowerBIReport report={individualReport} showLastRefresh={false} /> : null}
+        {individualReport ? <EmbeddedPowerBIReport report={individualReport} renewToken={(reportId) => renewPowerBIToken(reportId, true)} showLastRefresh={false} /> : null}
 
         <BrandingFooter />
       </main>
@@ -3631,7 +3680,7 @@ function App() {
             const isActive = currentView === "dashboard" && `powerbi:${report.reportId}` === activeDashboardTab;
             return (
               <div key={report.reportId} hidden={!isActive}>
-                <EmbeddedPowerBIReport report={report} isActive={isActive} />
+                <EmbeddedPowerBIReport report={report} renewToken={renewPowerBIToken} isActive={isActive} />
               </div>
             );
           })}

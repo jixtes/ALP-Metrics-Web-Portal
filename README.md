@@ -216,6 +216,13 @@ Power BI effective identity and uses the Power BI role `IR Web Demo User RLS`.
 Portal users with `individual_report_access` are redirected to
 `/individual-report` after login.
 
+Loaded Power BI reports stay mounted across dashboard tabs and Settings visits.
+The portal checks embed tokens every 30 seconds while the browser is visible,
+and when returning to a report or the browser. Tokens renew five minutes before
+expiry without reloading the report. Already-expired reports reload with a fresh
+token; temporary renewal failures retry after 30 seconds. Renewal uses the same
+authenticated endpoints and access rules as the original embed.
+
 Test-survey uploads from the local `files/test_survey` workspace and the
 SharePoint `test_survey` folder are excluded from the portal's general Survey
 data files table. Legacy `local_update` entries remain hidden as well.
