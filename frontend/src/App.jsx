@@ -3415,7 +3415,7 @@ function App() {
                             >
                               <td data-label="Survey">
                                 {survey.survey_name}
-                                {selectedSurvey ? <span className="pipeline-version-badge" data-version={survey.pipeline_version || "V3"}>{survey.pipeline_version || "V3"}</span> : null}
+                                {selectedSurvey && survey.pipeline_version === "V2" ? <span className="pipeline-version-badge" data-version="V2">V2</span> : null}
                                 {survey.source_survey ? <span className="survey-source-label">{survey.source_survey}</span> : null}
                               </td>
                               {!selectedSurvey ? (
@@ -3546,7 +3546,7 @@ function App() {
                                     {statusDetails.icon}
                                   </span>
                                   <span className="upload-file-copy">
-                                    <span className="upload-file-name">{item.file_name} <span className="pipeline-version-badge" data-version={item.pipeline_version || "V3"}>{item.pipeline_version || "V3"}</span></span>
+                                    <span className="upload-file-name">{item.file_name} {item.pipeline_version === "V2" ? <span className="pipeline-version-badge" data-version="V2">V2</span> : null}</span>
                                     <span className="upload-file-path">{formatFolderPath(item.folder)}</span>
                                   </span>
                                 </div>
