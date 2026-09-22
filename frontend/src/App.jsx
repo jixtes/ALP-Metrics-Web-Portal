@@ -44,12 +44,6 @@ const uploadColumns = [
 
 let powerBIClientPromise;
 
-function delay(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 function formatDate(value) {
   if (!value) {
     return "N/A";
@@ -453,6 +447,10 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
+  const runRequestRef = useRef(false);
+  const runningPipelineRuns = Object.values(dashboard.latest_runs ?? {}).filter((run) => run?.status === "running");
+  const runningPipelineRunIds = runningPipelineRuns.map((run) => run.id).sort().join(",");
+  const isUpdating = isRunning || runningPipelineRuns.length > 0;
   const [pipelineStatus, setPipelineStatus] = useState(null);
   const [pipelineOutput, setPipelineOutput] = useState("");
   const [pipelineError, setPipelineError] = useState("");
@@ -943,6 +941,34 @@ function App() {
   }, [isAuthenticated, isResetRoute, isIndividualReportRoute]);
 
   useEffect(() => {
+    if (!isAuthenticated || !runningPipelineRunIds) return;
+    let cancelled = false;
+    let timer;
+    async function refreshRunningUpdate() {
+      try {
+        const runs = await Promise.all(runningPipelineRuns.map((run) => apiRequest(`/api/pipeline/runs/${run.id}`)));
+        if (cancelled || runs.every((run) => run.status === "running")) return;
+        const data = await apiRequest(`/api/dashboard${accessPreviewQuery(accessPreviewParams)}`);
+        if (cancelled) return;
+        setDashboard(data);
+        setSelectedSurveyId((current) => current === null || data.surveys.some((survey) => survey.id === current)
+          ? current : getLatestSurveyId(data.surveys));
+        const failedRun = runs.find((run) => ["failed", "partial"].includes(run.status));
+        if (failedRun) setError(failedRun.message || "The update failed.");
+      } catch (refreshError) {
+        if (!cancelled) setError("Unable to refresh update status: " + refreshError.message);
+      } finally {
+        if (!cancelled) timer = window.setTimeout(refreshRunningUpdate, 5000);
+      }
+    }
+    timer = window.setTimeout(refreshRunningUpdate, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isAuthenticated, runningPipelineRunIds]);
+
+  useEffect(() => {
     const availableTabs = [
       "surveys",
       "uploads",
@@ -1137,6 +1163,8 @@ function App() {
   }
 
   async function handleRunPipeline(version = pipelineVersion) {
+    if (isUpdating || runRequestRef.current) return;
+    runRequestRef.current = true;
     setIsRunning(true);
     setError("");
 
@@ -1145,27 +1173,15 @@ function App() {
         method: "POST",
         body: { pipelineVersion: version },
       });
-      const runId = runData.run_id;
-      let completedRun = null;
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        await delay(attempt === 0 ? 1200 : 5000);
-        const run = await apiRequest(`/api/pipeline/runs/${runId}`);
-        if (run?.status && run.status !== "running") {
-          completedRun = run;
-          break;
-        }
-      }
-      if (!completedRun) {
-        setError("The update is still running. Refresh manually later to check the result.");
-        return;
-      }
-      await refreshPipelineView();
-      if (["failed", "partial"].includes(completedRun.status)) {
-        setError(completedRun.message || "The update failed.");
-      }
+      const run = {id: runData.run_id, status: runData.status || "running", pipeline_version: version,
+        message: runData.message, triggered_by_name: authUser.fullName, triggered_by_email: authUser.email};
+      setDashboard((current) => ({...current, latest_run: run,
+        latest_runs: {...current.latest_runs, [version]: run}}));
     } catch (runError) {
+      await refreshPipelineView();
       setError(runError.message);
     } finally {
+      runRequestRef.current = false;
       setIsRunning(false);
     }
   }
@@ -2643,14 +2659,14 @@ function App() {
               canManagePipeline ? (
                 <div className="settings-stack">
                   <div className="settings-actions">
-                    <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isRunning}>
+                    <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isUpdating}>
                       {isPullingPipeline ? "Pulling pipeline..." : "Pull latest V3 code"}
                     </button>
                     <button type="button" className="secondary-button" onClick={handleRefreshPipelineStatus} disabled={isPipelineStatusLoading}>
                       {isPipelineStatusLoading ? "Refreshing..." : "Refresh status"}
                     </button>
-                    <button type="button" className="secondary-button" onClick={() => handleRunPipeline("V3")} disabled={isRunning}>
-                      {isRunning ? "Running pipeline..." : "Run V3 now"}
+                    <button type="button" className="secondary-button" onClick={() => handleRunPipeline("V3")} disabled={isUpdating || isPullingPipeline}>
+                      {isUpdating ? "Update in progress..." : "Run V3 now"}
                     </button>
                   </div>
 
@@ -3120,9 +3136,9 @@ function App() {
 
         <div className="run-panel">
           <PipelineVersionSelect id="pipeline-version" value={pipelineVersion} onChange={setPipelineVersion}
-            disabled={!canRunPipeline || isRunning || isPullingPipeline} />
-          <button type="button" onClick={() => handleRunPipeline()} disabled={isRunning || !canRunPipeline}>
-            {isRunning ? "Updating..." : "Update data"}
+            disabled={!canRunPipeline || isUpdating || isPullingPipeline} />
+          <button type="button" onClick={() => handleRunPipeline()} disabled={isUpdating || isPullingPipeline || !canRunPipeline}>
+            {isUpdating ? "Updating..." : "Update data"}
           </button>
           <p className="run-meta">
             Last updated by: {selectedPipelineRun?.triggered_by_name || selectedPipelineRun?.triggered_by_email || "N/A"}

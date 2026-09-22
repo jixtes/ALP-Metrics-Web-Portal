@@ -22,6 +22,8 @@ from .database import (
     fetch_pipeline_run,
     fetch_powerbi_report_selections,
     insert_pipeline_run,
+    complete_pipeline_run,
+    PipelineAlreadyRunning,
     initialize_database,
     replace_powerbi_report_selections,
 )
@@ -159,18 +161,22 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify({"error": str(exc)}), 400
         extract_mode = "surveycto" if version == "V3" else "configured"
         pipeline_status = get_pipeline_repo_status(version)
-        run_id = insert_pipeline_run(
-            db_path,
-            status="running",
-            extract_mode=extract_mode,
-            pipeline_version=version,
-            started_at=datetime.now(tz=timezone.utc).isoformat(),
-            triggered_by_email=getattr(current_user, "email", None),
-            triggered_by_name=getattr(current_user, "full_name", None),
-            pipeline_branch=pipeline_status.get("branch"),
-            pipeline_commit_before=pipeline_status.get("commit"),
-            message=f"{version} pipeline execution started.",
-        )
+        try:
+            run_id = insert_pipeline_run(
+                db_path,
+                status="running",
+                reject_if_running=True,
+                extract_mode=extract_mode,
+                pipeline_version=version,
+                started_at=datetime.now(tz=timezone.utc).isoformat(),
+                triggered_by_email=getattr(current_user, "email", None),
+                triggered_by_name=getattr(current_user, "full_name", None),
+                pipeline_branch=pipeline_status.get("branch"),
+                pipeline_commit_before=pipeline_status.get("commit"),
+                message=f"{version} pipeline execution started.",
+            )
+        except PipelineAlreadyRunning as exc:
+            return jsonify({"error": str(exc), "run_id": exc.run_id}), 409
 
         thread = Thread(
             target=_run_pipeline_background,
@@ -184,7 +190,13 @@ def create_app(config: dict | None = None) -> Flask:
             },
             daemon=True,
         )
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            complete_pipeline_run(db_path, run_id=run_id, status="failed",
+                                  completed_at=datetime.now(tz=timezone.utc).isoformat(),
+                                  message="Unable to start the data update.")
+            raise
         return jsonify({"run_id": run_id, "status": "running", "pipeline_version": version,
                         "message": f"{version} pipeline execution started."}), 202
 

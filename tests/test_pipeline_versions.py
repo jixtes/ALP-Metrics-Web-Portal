@@ -6,6 +6,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 import pandas as pd
@@ -14,7 +15,7 @@ from flask_security import SQLAlchemyUserDatastore, hash_password
 from backend.app import create_app, _filter_project_file_uploads
 from backend.auth import db as auth_db, User, Role
 from backend.database import (initialize_database, insert_pipeline_run, publish_run_snapshot,
-                              fetch_dashboard, fetch_pipeline_run, complete_pipeline_run)
+                              fetch_dashboard, fetch_pipeline_run, complete_pipeline_run, PipelineAlreadyRunning)
 from backend.pipelines import v2, v3
 from backend.pipelines.snapshots import build_snapshot_dataframe
 from backend import service
@@ -54,6 +55,18 @@ class SnapshotFixture(unittest.TestCase):
         return run_id
 
 class SnapshotStorageTests(SnapshotFixture):
+    def test_concurrent_requests_only_reserve_one_update_across_versions(self):
+        def start(version):
+            try:
+                return insert_pipeline_run(self.db, status="running", extract_mode="configured",
+                    pipeline_version=version, started_at="2026-09-22", triggered_by_email=None,
+                    triggered_by_name=None, reject_if_running=True)
+            except PipelineAlreadyRunning:
+                return None
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(start, ["V2", "V3"]))
+        self.assertEqual(sum(result is not None for result in results), 1)
+
     def test_versions_and_failed_v2_projects_survive_other_updates(self):
         self.publish("V3", [survey()], [upload("v3.csv")])
         self.publish("V2", [survey(source_key="a", project_key="V2:Project"), survey("Other", source_key="b")],
@@ -248,9 +261,35 @@ class PipelineAPITests(unittest.TestCase):
                 repo.assert_called_with(version)
                 run = self.client.get(f"/api/pipeline/runs/{response.json['run_id']}").json
                 self.assertEqual(run["pipeline_version"], version)
+                complete_pipeline_run(self.root / "portal.db", run_id=run["id"], status="completed",
+                                      completed_at="2026-09-22", message="Done")
             response = self.client.post("/api/pipeline/run", json={"pipelineVersion": "V1"})
             self.assertEqual(response.status_code, 400)
             self.assertEqual(thread.call_count, 2)
+
+    def test_running_update_blocks_both_versions_until_completion(self):
+        with patch("backend.app.Thread") as thread, patch("backend.app.get_pipeline_repo_status", return_value={}):
+            first = self.client.post("/api/pipeline/run", json={"pipelineVersion": "V3"})
+            self.assertEqual(first.status_code, 202)
+            for version in ("V3", "V2"):
+                blocked = self.client.post("/api/pipeline/run", json={"pipelineVersion": version})
+                self.assertEqual(blocked.status_code, 409)
+                self.assertEqual(blocked.json["run_id"], first.json["run_id"])
+            self.assertEqual(thread.call_count, 1)
+            complete_pipeline_run(self.root / "portal.db", run_id=first.json["run_id"], status="failed",
+                                  completed_at="2026-09-22", message="Failed")
+            second = self.client.post("/api/pipeline/run", json={"pipelineVersion": "V2"})
+            self.assertEqual(second.status_code, 202)
+            self.assertEqual(thread.call_count, 2)
+
+    def test_failed_thread_start_does_not_leave_update_locked(self):
+        with patch("backend.app.Thread") as thread, patch("backend.app.get_pipeline_repo_status", return_value={}):
+            thread.return_value.start.side_effect = RuntimeError("Thread unavailable")
+            with self.assertRaises(RuntimeError):
+                self.client.post("/api/pipeline/run", json={"pipelineVersion": "V2"})
+            self.assertEqual(fetch_dashboard(self.root / "portal.db")["latest_runs"]["V2"]["status"], "failed")
+            thread.return_value.start.side_effect = None
+            self.assertEqual(self.client.post("/api/pipeline/run", json={"pipelineVersion": "V3"}).status_code, 202)
 
     def test_status_supports_v2_but_settings_pull_only_allows_v3(self):
         with patch("backend.app.get_pipeline_repo_status", return_value={}) as status, patch("backend.app.pull_pipeline_repo", return_value={"status": "completed"}) as pull:

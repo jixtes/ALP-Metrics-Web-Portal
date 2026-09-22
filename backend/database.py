@@ -128,6 +128,12 @@ def initialize_database(db_path: Path) -> None:
         connection.commit()
 
 
+class PipelineAlreadyRunning(Exception):
+    def __init__(self, run_id: int):
+        self.run_id = run_id
+        super().__init__("A data update is already in progress. Wait for it to finish.")
+
+
 def insert_pipeline_run(
     db_path: Path,
     *,
@@ -140,8 +146,22 @@ def insert_pipeline_run(
     pipeline_commit_before: str | None = None,
     message: str | None = None,
     pipeline_version: str = "V3",
+    reject_if_running: bool = False,
 ) -> int:
     with connect_database(db_path) as connection:
+        if reject_if_running:
+            # Reserve the update across versions and concurrent web workers.
+            connection.execute("BEGIN IMMEDIATE")
+            active = connection.execute("""
+                SELECT id FROM pipeline_runs
+                WHERE status = 'running' AND id IN (
+                    SELECT MAX(id) FROM pipeline_runs
+                    WHERE extract_mode != 'surveycto_test'
+                    GROUP BY pipeline_version
+                ) LIMIT 1
+            """).fetchone()
+            if active:
+                raise PipelineAlreadyRunning(active["id"])
         cursor = connection.execute(
             """
             INSERT INTO pipeline_runs (

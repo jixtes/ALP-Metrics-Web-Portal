@@ -93,6 +93,11 @@ Settings pipeline status, Git pull controls, and run logs apply to V3 only.
 The portal rejects V2 code-pull requests. Update V2 code through the VM's update
 script; the main Update data selector still runs either V2 or V3.
 Both pipelines' runs and pulls are serialized within the backend process.
+Only one portal data update can be active at a time across V2 and V3. During an
+update, the version selector, Update data button, and Settings run/pull buttons
+are disabled. The UI resumes status polling after a page refresh and re-enables
+the controls when the run finishes. The API also rejects overlapping update
+requests, including requests from other tabs or users.
 
 The backend imports and runs the pipeline from a separate local checkout. By
 default it looks for a sibling directory:
