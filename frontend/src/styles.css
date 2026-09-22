@@ -1779,6 +1779,10 @@ tbody tr:hover,
   margin-top: 14px;
 }
 
+.pipeline-run-message {
+  margin-top: 1rem;
+}
+
 .upload-status {
   display: inline-flex;
   align-items: center;

@@ -2696,7 +2696,7 @@ function App() {
                           </p>
                         </div>
                       </div>
-                      <p className="run-meta">{settingsPipelineRun.message}</p>
+                      <p className="run-meta pipeline-run-message">{settingsPipelineRun.message}</p>
                       {settingsPipelineRun.run_log ? (
                         <pre className="pipeline-log pipeline-log-spaced">{settingsPipelineRun.run_log}</pre>
                       ) : null}
