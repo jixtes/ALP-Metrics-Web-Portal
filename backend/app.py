@@ -217,6 +217,8 @@ def create_app(config: dict | None = None) -> Flask:
         try:
             payload = request.get_json(silent=True) or {}
             version = normalize_pipeline_version(payload.get("pipelineVersion", "V3"))
+            if version != "V3":
+                return jsonify({"error": "Pipeline code updates from Settings are available for V3 only."}), 400
             result = pull_pipeline_repo(version)
             status_code = 200 if result["status"] in {"completed", "blocked"} else 500
             return jsonify(result), status_code

@@ -460,16 +460,6 @@ function App() {
   const [isPipelineStatusLoading, setIsPipelineStatusLoading] = useState(false);
   const [isPullingPipeline, setIsPullingPipeline] = useState(false);
   const [pipelineVersion, setPipelineVersion] = useState("V3");
-  const pipelineVersionRef = useRef("V3");
-
-  function selectPipelineVersion(version) {
-    pipelineVersionRef.current = version;
-    setPipelineVersion(version);
-    setPipelineStatus(null);
-    setPipelineOutput("");
-    setPipelineError("");
-    setPipelineMessage("");
-  }
   const [error, setError] = useState("");
   const [surveyFilter, setSurveyFilter] = useState("");
   const [surveyPhaseFilter, setSurveyPhaseFilter] = useState("");
@@ -822,8 +812,8 @@ function App() {
     setPipelineError("");
 
     try {
-      const data = await apiRequest(`/api/pipeline/status?pipelineVersion=${pipelineVersion}`);
-      if (pipelineVersionRef.current === pipelineVersion) setPipelineStatus(data);
+      const data = await apiRequest("/api/pipeline/status?pipelineVersion=V3");
+      setPipelineStatus(data);
     } catch (loadError) {
       setPipelineStatus(null);
       setPipelineError(loadError.message);
@@ -1000,7 +990,6 @@ function App() {
     canManagePowerBI,
     canManagePipeline,
     savedReportIds,
-    pipelineVersion,
   ]);
 
   useEffect(() => {
@@ -1147,14 +1136,14 @@ function App() {
     });
   }
 
-  async function handleRunPipeline() {
+  async function handleRunPipeline(version = pipelineVersion) {
     setIsRunning(true);
     setError("");
 
     try {
       const runData = await apiRequest("/api/pipeline/run", {
         method: "POST",
-        body: { pipelineVersion },
+        body: { pipelineVersion: version },
       });
       const runId = runData.run_id;
       let completedRun = null;
@@ -1199,7 +1188,7 @@ function App() {
     try {
       const data = await apiRequest("/api/pipeline/pull", {
         method: "POST",
-        body: { pipelineVersion },
+        body: { pipelineVersion: "V3" },
       });
       setPipelineStatus(data.after ?? data.before ?? null);
       setPipelineOutput(data.output || "No output returned.");
@@ -1933,6 +1922,8 @@ function App() {
 
   const selectedPipelineRun = dashboard.latest_runs?.[pipelineVersion] ??
     (dashboard.latest_run?.pipeline_version === pipelineVersion ? dashboard.latest_run : null);
+  const settingsPipelineRun = dashboard.latest_runs?.V3 ??
+    (dashboard.latest_run?.pipeline_version === "V3" ? dashboard.latest_run : null);
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
   const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => `${survey.pipeline_version}:${survey.project_ref || survey.project_key}`)).size;
   const totalSubmissions = dashboard.surveys.reduce((sum, survey) => sum + survey.submission_count, 0);
@@ -2651,19 +2642,15 @@ function App() {
             {activeSettingsSection === "pipeline" ? (
               canManagePipeline ? (
                 <div className="settings-stack">
-                  <div className="filter-row">
-                    <PipelineVersionSelect id="settings-pipeline-version" value={pipelineVersion} onChange={selectPipelineVersion}
-                      disabled={isRunning || isPullingPipeline} />
-                  </div>
                   <div className="settings-actions">
                     <button type="button" onClick={handlePullPipeline} disabled={isPullingPipeline || isRunning}>
-                      {isPullingPipeline ? "Pulling pipeline..." : `Pull latest ${pipelineVersion} code`}
+                      {isPullingPipeline ? "Pulling pipeline..." : "Pull latest V3 code"}
                     </button>
                     <button type="button" className="secondary-button" onClick={handleRefreshPipelineStatus} disabled={isPipelineStatusLoading}>
                       {isPipelineStatusLoading ? "Refreshing..." : "Refresh status"}
                     </button>
-                    <button type="button" className="secondary-button" onClick={handleRunPipeline} disabled={isRunning}>
-                      {isRunning ? "Running pipeline..." : `Run ${pipelineVersion} now`}
+                    <button type="button" className="secondary-button" onClick={() => handleRunPipeline("V3")} disabled={isRunning}>
+                      {isRunning ? "Running pipeline..." : "Run V3 now"}
                     </button>
                   </div>
 
@@ -2677,41 +2664,41 @@ function App() {
                     </div>
                   ) : null}
 
-                  {selectedPipelineRun ? (
+                  {settingsPipelineRun ? (
                     <div className="detail-section-block">
                       <div className="settings-summary">
                         <div className="stat-card compact-stat-card">
                           <span>Run commit</span>
-                          <strong>{selectedPipelineRun.pipeline_commit_after?.slice(0, 7) || "N/A"}</strong>
+                          <strong>{settingsPipelineRun.pipeline_commit_after?.slice(0, 7) || "N/A"}</strong>
                           <p className="commit-card-meta">
-                            Branch: {selectedPipelineRun.pipeline_branch || pipelineStatus?.branch || "N/A"}
+                            Branch: {settingsPipelineRun.pipeline_branch || pipelineStatus?.branch || "N/A"}
                           </p>
                           <p className="commit-card-meta">
-                            {selectedPipelineRun.pipeline_commit_subject || "Commit message unavailable."}
+                            {settingsPipelineRun.pipeline_commit_subject || "Commit message unavailable."}
                           </p>
                           <p className="commit-card-meta">
-                            {formatDate(selectedPipelineRun.pipeline_commit_at)}
-                            {selectedPipelineRun.pipeline_commit_author
-                              ? ` by ${selectedPipelineRun.pipeline_commit_author}`
+                            {formatDate(settingsPipelineRun.pipeline_commit_at)}
+                            {settingsPipelineRun.pipeline_commit_author
+                              ? ` by ${settingsPipelineRun.pipeline_commit_author}`
                               : ""}
                           </p>
                         </div>
                         <div className="stat-card compact-stat-card">
                           <span>Last run</span>
                           <strong>
-                            {selectedPipelineRun.status === "running"
+                            {settingsPipelineRun.status === "running"
                               ? "In progress"
-                              : formatDate(selectedPipelineRun.completed_at)}
+                              : formatDate(settingsPipelineRun.completed_at)}
                           </strong>
                           <p className="commit-card-meta">
                             Triggered by:{" "}
-                            {selectedPipelineRun.triggered_by_name || selectedPipelineRun.triggered_by_email || "N/A"}
+                            {settingsPipelineRun.triggered_by_name || settingsPipelineRun.triggered_by_email || "N/A"}
                           </p>
                         </div>
                       </div>
-                      <p className="run-meta">{selectedPipelineRun.message}</p>
-                      {selectedPipelineRun.run_log ? (
-                        <pre className="pipeline-log pipeline-log-spaced">{selectedPipelineRun.run_log}</pre>
+                      <p className="run-meta">{settingsPipelineRun.message}</p>
+                      {settingsPipelineRun.run_log ? (
+                        <pre className="pipeline-log pipeline-log-spaced">{settingsPipelineRun.run_log}</pre>
                       ) : null}
                     </div>
                   ) : null}
@@ -3132,9 +3119,9 @@ function App() {
         </div>
 
         <div className="run-panel">
-          <PipelineVersionSelect id="pipeline-version" value={pipelineVersion} onChange={selectPipelineVersion}
+          <PipelineVersionSelect id="pipeline-version" value={pipelineVersion} onChange={setPipelineVersion}
             disabled={!canRunPipeline || isRunning || isPullingPipeline} />
-          <button type="button" onClick={handleRunPipeline} disabled={isRunning || !canRunPipeline}>
+          <button type="button" onClick={() => handleRunPipeline()} disabled={isRunning || !canRunPipeline}>
             {isRunning ? "Updating..." : "Update data"}
           </button>
           <p className="run-meta">

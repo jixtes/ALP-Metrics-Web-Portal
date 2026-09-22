@@ -252,12 +252,14 @@ class PipelineAPITests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(thread.call_count, 2)
 
-    def test_status_and_pull_select_the_correct_repository(self):
+    def test_status_supports_v2_but_settings_pull_only_allows_v3(self):
         with patch("backend.app.get_pipeline_repo_status", return_value={}) as status, patch("backend.app.pull_pipeline_repo", return_value={"status": "completed"}) as pull:
             self.assertEqual(self.client.get("/api/pipeline/status?pipelineVersion=V2").status_code, 200)
             status.assert_called_once_with("V2")
-            self.assertEqual(self.client.post("/api/pipeline/pull", json={"pipelineVersion": "V2"}).status_code, 200)
-            pull.assert_called_once_with("V2")
+            self.assertEqual(self.client.post("/api/pipeline/pull", json={"pipelineVersion": "V2"}).status_code, 400)
+            pull.assert_not_called()
+            self.assertEqual(self.client.post("/api/pipeline/pull", json={"pipelineVersion": "V3"}).status_code, 200)
+            pull.assert_called_once_with("V3")
 
     def test_restricted_dashboard_only_returns_authorized_v2_data_and_hides_logs(self):
         db_path = self.root / "portal.db"

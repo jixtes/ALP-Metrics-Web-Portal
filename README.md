@@ -89,7 +89,9 @@ The Data files view groups V2 files into one entry per project with links to its
 data folders. V2 tags are red and V3 tags are green. QC and individual-report
 folders are hidden from the file list and folder filter.
 
-Admin pipeline status and Git pull controls apply to the selected version.
+Settings pipeline status, Git pull controls, and run logs apply to V3 only.
+The portal rejects V2 code-pull requests. Update V2 code through the VM's update
+script; the main Update data selector still runs either V2 or V3.
 Both pipelines' runs and pulls are serialized within the backend process.
 
 The backend imports and runs the pipeline from a separate local checkout. By
