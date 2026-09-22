@@ -254,7 +254,7 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function EmbeddedPowerBIReport({ report, showLastRefresh = true }) {
+function EmbeddedPowerBIReport({ report, showLastRefresh = true, isActive = true }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
   const embeddedReportRef = useRef(null);
@@ -275,6 +275,15 @@ function EmbeddedPowerBIReport({ report, showLastRefresh = true }) {
       },
     });
   }
+
+  useEffect(() => {
+    if (!isActive) return;
+    const frame = window.requestAnimationFrame(() => {
+      applyReportFit(document.fullscreenElement === cardRef.current);
+      window.dispatchEvent(new Event("resize"));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isActive]);
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -494,6 +503,7 @@ function App() {
   const [currentView, setCurrentView] = useState("dashboard");
   const [activeSettingsSection, setActiveSettingsSection] = useState("profile");
   const [activeDashboardTab, setActiveDashboardTab] = useState("surveys");
+  const [visitedPowerBIReports, setVisitedPowerBIReports] = useState([]);
   const [availableReports, setAvailableReports] = useState([]);
   const [selectedPowerBIReports, setSelectedPowerBIReports] = useState([]);
   const [savedReportIds, setSavedReportIds] = useState([]);
@@ -931,6 +941,7 @@ function App() {
     } else {
       setDashboard(emptyDashboard);
       setEmbeddedReports([]);
+      setVisitedPowerBIReports([]);
       setSavedReportIds([]);
       setSavedPowerBIReportAccess({});
       setPowerBIReportAccess({});
@@ -1150,6 +1161,10 @@ function App() {
   }
 
   function handleDashboardTabClick(tabKey) {
+    if (tabKey.startsWith("powerbi:")) {
+      const reportId = tabKey.slice("powerbi:".length);
+      setVisitedPowerBIReports((current) => current.includes(reportId) ? current : [...current, reportId]);
+    }
     setActiveDashboardTab(tabKey);
     window.requestAnimationFrame(() => {
       const tabShell = dashboardTabShellRef.current;
@@ -3610,13 +3625,16 @@ function App() {
           </section>
         ) : null}
 
-        {activeDashboardTab.startsWith("powerbi:") ? (
-          embeddedReports
-            .filter((report) => `powerbi:${report.reportId}` === activeDashboardTab)
-            .map((report) => (
-              <EmbeddedPowerBIReport key={report.reportId} report={report} />
-            ))
-        ) : null}
+        {embeddedReports
+          .filter((report) => visitedPowerBIReports.includes(report.reportId))
+          .map((report) => {
+            const isActive = `powerbi:${report.reportId}` === activeDashboardTab;
+            return (
+              <div key={report.reportId} hidden={!isActive}>
+                <EmbeddedPowerBIReport report={report} isActive={isActive} />
+              </div>
+            );
+          })}
       </section>
 
       <BrandingFooter />
