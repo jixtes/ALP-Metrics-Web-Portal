@@ -1423,8 +1423,8 @@ function App() {
         method: "POST",
         body: { datasetId },
       });
-      setPowerBIMessage(data.message || "Power BI semantic model refresh started.");
-      await loadPowerBIAdminState();
+      setAutoRefreshJob(data.job);
+      setPowerBIMessage("");
     } catch (refreshError) {
       setPowerBIError(refreshError.message);
     } finally {
@@ -2340,6 +2340,12 @@ function App() {
             {powerBIError || powerBIMessage}
           </section>
         ) : null}
+        {autoRefreshJob?.trigger === "manual" && activeSettingsSection === "powerbi" ? (
+          <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
+            {autoRefreshJob.active ? "Refreshing…" : autoRefreshJob.message}
+            {autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
+          </section>
+        ) : null}
         {(usersError || usersMessage) && activeSettingsSection === "users" ? (
           <section className={`alert-card${usersMessage && !usersError ? " alert-card-success" : ""}`}>
             {usersError || usersMessage}
@@ -3115,9 +3121,9 @@ function App() {
                                     event.stopPropagation();
                                     handleRefreshPowerBIReport(report);
                                   }}
-                                  disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId || Boolean(autoRefreshJob?.active)}
+                                  disabled={!report.datasetId || Boolean(refreshingPowerBIDatasetId) || isUpdating}
                                 >
-                                  {refreshingPowerBIDatasetId === report.datasetId ? "Refreshing..." : "Refresh report"}
+                                  {refreshingPowerBIDatasetId === report.datasetId || (autoRefreshJob?.active && autoRefreshJob.datasets?.some((target) => target.datasetId === report.datasetId)) ? "Refreshing…" : "Refresh report"}
                                 </button>
                               </div>
                               <div className="powerbi-report-access-column" onClick={(event) => event.stopPropagation()}>

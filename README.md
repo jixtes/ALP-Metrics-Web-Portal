@@ -265,8 +265,12 @@ size other than F2/F16 externally, the worker waits rather than overwriting it.
 The portal app needs Azure resource permissions on the capacity as well as Power BI
 workspace/model access. Capacity resizing affects all workspaces on that capacity.
 Fabric background usage smoothing can still cause throttling after returning to F2.
-The existing Refresh report buttons continue to perform a direct refresh; the
-temporary capacity increase applies to automatic refresh after normal data updates.
+The Settings **Refresh report** buttons use the same F2 → F16 → refresh → F2
+workflow, including durable recovery and restoration after failure. Manual refresh
+works without enabling Auto refresh and always runs, even when data is unchanged.
+It requires the same configured capacity resource and permissions. Manual jobs do
+not create pipeline runs or change automatic data fingerprints. Normal pipeline
+updates and other portal refreshes are blocked until F2 restoration finishes.
 
 Run backend checks with `.venv/bin/python -m unittest discover -s tests` and embed
 token checks with `node --test frontend/src/powerbiSession.test.js`.

@@ -73,6 +73,104 @@ class AutoRefreshTests(unittest.TestCase):
         self.history[-1]['status'] = status
         for _ in range(4): self.step()
 
+    def manual(self, dataset='dataset'):
+        return auto.queue_manual_refresh(self.db, dataset, client=self.client,
+                                         fabric_factory=lambda _: self.fabric)
+
+    def test_manual_refresh_without_auto_selection_or_pipeline_run(self):
+        self.save([])
+        job = self.manual()
+        self.assertEqual(job['trigger'], 'manual')
+        self.assertIsNone(job['runId'])
+        self.client.refresh_dataset.assert_not_called()
+        self.fabric.resize.assert_not_called()
+        for _ in range(4): self.step()
+        self.assertEqual(self.sku, 'F16')
+        self.history[-1]['endTime'] = '2026-09-23T09:12:00Z'
+        self.finish_refresh()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'completed')
+        self.assertEqual(self.sku, 'F2')
+        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F16', 'F2'])
+        with connect_database(self.db) as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM pipeline_runs').fetchone()[0], 0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM powerbi_refresh_watermarks').fetchone()[0], 0)
+        # NULL pipeline IDs allow another manual refresh, even without new data.
+        self.assertEqual(self.manual()['status'], 'queued')
+
+    def test_manual_forces_refresh_when_automatic_would_skip(self):
+        self.start_refresh(); self.finish_refresh(); self.new_run()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'skipped')
+        self.manual()
+        for _ in range(4): self.step()
+        self.assertEqual(self.client.refresh_dataset.call_count, 2)
+        self.assertEqual(self.sku, 'F16')
+
+    def test_manual_failure_resumes_restoration_after_restart(self):
+        self.manual()
+        for _ in range(4): self.step()
+        self.history[-1]['status'] = 'Failed'
+        self.step(); self.step()
+        self.fabric.resize.side_effect = RuntimeError('Azure unavailable')
+        self.step()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'restoring')
+        initialize_database(self.db)
+        self.fabric.resize.side_effect = lambda sku: setattr(self, 'sku', sku)
+        self.step(); self.step()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
+        self.assertEqual(self.sku, 'F2')
+        self.assertEqual(self.client.refresh_dataset.call_count, 1)
+
+    def test_manual_and_pipeline_reservations_are_mutually_exclusive(self):
+        self.manual()
+        with self.assertRaises(auto.RefreshBusy): self.manual()
+        with self.assertRaises(PipelineAlreadyRunning):
+            insert_pipeline_run(self.db, status='running', extract_mode='surveycto', started_at='now',
+                                triggered_by_email=None, triggered_by_name=None, reject_if_running=True)
+        for _ in range(4): self.step()
+        self.finish_refresh()
+        insert_pipeline_run(self.db, status='running', extract_mode='surveycto', started_at='now',
+                            triggered_by_email=None, triggered_by_name=None, reject_if_running=True)
+        with self.assertRaises(auto.RefreshBusy): self.manual()
+
+    def test_manual_reservation_rechecks_after_remote_validation(self):
+        # A pipeline starts while the manual request is reading Fabric metadata.
+        original_get = self.fabric.get.side_effect
+        def capacity():
+            insert_pipeline_run(self.db, status='running', extract_mode='surveycto', started_at='now',
+                                triggered_by_email=None, triggered_by_name=None, reject_if_running=True)
+            return original_get()
+        self.fabric.get.side_effect = capacity
+        with self.assertRaises(auto.RefreshBusy): self.manual()
+        self.assertIsNone(auto.active_job(self.db))
+        self.fabric.resize.assert_not_called()
+
+    def test_manual_rejects_unknown_dataset_and_missing_capacity(self):
+        with self.assertRaises(ValueError): self.manual('outside-workspace')
+        with connect_database(self.db) as conn:
+            conn.execute('DELETE FROM powerbi_auto_settings')
+        with patch.dict(os.environ, {'FABRIC_CAPACITY_RESOURCE_ID': ''}):
+            with self.assertRaisesRegex(ValueError, 'FABRIC_CAPACITY_RESOURCE_ID'): self.manual()
+        self.assertIsNone(auto.active_job(self.db))
+        self.fabric.resize.assert_not_called()
+
+    def test_migration_preserves_active_job_and_accepts_manual_runs(self):
+        self.new_run()
+        before = auto.active_job(self.db)
+        with connect_database(self.db) as conn:
+            conn.execute('ALTER TABLE powerbi_refresh_jobs RENAME TO jobs_copy')
+            conn.execute("""CREATE TABLE powerbi_refresh_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL UNIQUE,
+                status TEXT NOT NULL, value TEXT NOT NULL, updated_at REAL NOT NULL)""")
+            conn.execute('INSERT INTO powerbi_refresh_jobs SELECT * FROM jobs_copy')
+            conn.execute('DROP TABLE jobs_copy')
+        initialize_database(self.db)
+        self.assertEqual(auto.active_job(self.db), before)
+        for _ in range(4): self.step()
+        self.finish_refresh()
+        job = self.manual()
+        self.assertGreater(job['id'], before['id'])
+        self.assertIsNone(job['runId'])
+
     def test_selection_is_separate_and_validated(self):
         saved = self.save(['r1', 'r2', 'r1'])
         self.assertEqual(saved['reportIds'], ['r1', 'r2'])
@@ -279,6 +377,29 @@ class AutoRefreshAPITests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/powerbi/auto-refresh').status_code, 403)
         self.assertEqual(self.client.put('/api/powerbi/auto-refresh', json={'reportIds': []}).status_code, 403)
         self.assertEqual(self.client.get('/api/powerbi/auto-refresh/status').status_code, 200)
+
+    def test_manual_endpoint_queues_shared_workflow_and_returns_errors(self):
+        self.assertNotEqual(self.client.post('/api/powerbi/refresh', json={'datasetId': 'dataset'}).status_code, 202)
+        self.login()
+        job = {'id': 1, 'trigger': 'manual', 'active': True, 'status': 'queued', 'message': 'Queued'}
+        with patch('backend.app.PowerBIConfig.from_env'), patch('backend.app.PowerBIClient') as client, patch(
+                'backend.app.auto_refresh.queue_manual_refresh', return_value=job) as queue:
+            result = self.client.post('/api/powerbi/refresh', json={'datasetId': 'dataset'})
+            self.assertEqual(result.status_code, 202)
+            self.assertEqual(result.json['job'], job)
+            self.assertEqual(queue.call_args.args[1], 'dataset')
+            client.return_value.refresh_dataset.assert_not_called()
+            queue.side_effect = auto.RefreshBusy('Busy')
+            self.assertEqual(self.client.post('/api/powerbi/refresh', json={'datasetId': 'dataset'}).status_code, 409)
+            queue.side_effect = ValueError('Configure capacity')
+            self.assertEqual(self.client.post('/api/powerbi/refresh', json={'datasetId': 'dataset'}).status_code, 400)
+        for payload in [[], 'bad']:
+            self.assertEqual(self.client.post('/api/powerbi/refresh', json=payload).status_code, 400)
+        from backend.auth import db, User
+        with self.app.app_context():
+            User.query.filter_by(email='auto@example.com').one().roles = []
+            db.session.commit()
+        self.assertEqual(self.client.post('/api/powerbi/refresh', json={'datasetId': 'dataset'}).status_code, 403)
 
     def test_disable_persists_and_malformed_settings_are_rejected(self):
         self.login()

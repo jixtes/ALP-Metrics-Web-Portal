@@ -443,10 +443,10 @@ def create_app(config: dict | None = None) -> Flask:
     @auth_required("session")
     @roles_required("admin")
     def refresh_powerbi_dataset():
-        if auto_refresh.active_job(db_path):
-            return jsonify({"error": "Wait for the automatic dashboard refresh and F2 restoration to finish."}), 409
-        payload = request.get_json(silent=True) or {}
-        dataset_id = str(payload.get("datasetId", "")).strip() or None
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Provide a report datasetId."}), 400
+        dataset_id = str(payload.get("datasetId") or "").strip() or None
 
         try:
             config = PowerBIConfig.from_env()
@@ -459,10 +459,16 @@ def create_app(config: dict | None = None) -> Flask:
                     dataset_id = unique_dataset_ids[0]
                 elif len(unique_dataset_ids) > 1:
                     return jsonify({"error": "Select one report to refresh because multiple semantic models are shown."}), 400
-            result = client.refresh_dataset(dataset_id=dataset_id)
-            return jsonify({"message": "Power BI semantic model refresh started.", **result}), 202
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            dataset_id = dataset_id or config.dataset_id
+            job = auto_refresh.queue_manual_refresh(db_path, dataset_id, client=client)
+            return jsonify({"message": job["message"], "job": job}), 202
+        except auto_refresh.RefreshBusy as exc:
+            return jsonify({"error": str(exc)}), 409
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception:
+            app.logger.exception("Unable to queue manual Power BI refresh")
+            return jsonify({"error": "Unable to prepare the dashboard refresh. Check Power BI and Fabric access."}), 502
 
     @app.get("/api/powerbi/embed-configs")
     @auth_required("session")

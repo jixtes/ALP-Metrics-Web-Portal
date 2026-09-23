@@ -1,4 +1,4 @@
-"""Durable, serialized refresh jobs. No remote actions happen until enabled in Settings."""
+"""Durable, serialized refresh jobs. Shared by automatic and manual Settings refreshes."""
 from __future__ import annotations
 
 import csv
@@ -31,9 +31,21 @@ def initialize(db):
                 workspace TEXT, dataset TEXT, version TEXT, fingerprint TEXT NOT NULL,
                 PRIMARY KEY(workspace, dataset, version));
             CREATE TABLE IF NOT EXISTS powerbi_refresh_jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL UNIQUE,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER UNIQUE,
                 status TEXT NOT NULL, value TEXT NOT NULL, updated_at REAL NOT NULL);
         """)
+
+        # Older deployments required a pipeline run for every refresh. Manual jobs
+        # have no run_id; preserve existing jobs and their recovery state atomically.
+        conn.execute("BEGIN IMMEDIATE")
+        columns = conn.execute("PRAGMA table_info(powerbi_refresh_jobs)").fetchall()
+        if any(row["name"] == "run_id" and row["notnull"] for row in columns):
+            conn.execute("ALTER TABLE powerbi_refresh_jobs RENAME TO powerbi_refresh_jobs_old")
+            conn.execute("""CREATE TABLE powerbi_refresh_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER UNIQUE,
+                status TEXT NOT NULL, value TEXT NOT NULL, updated_at REAL NOT NULL)""")
+            conn.execute("INSERT INTO powerbi_refresh_jobs SELECT * FROM powerbi_refresh_jobs_old")
+            conn.execute("DROP TABLE powerbi_refresh_jobs_old")
 
 
 def settings(db):
@@ -75,6 +87,54 @@ def save_settings(db, payload, client=None, fabric_factory=FabricClient):
             raise ValueError("Wait for the current dashboard refresh and F2 restoration before changing these settings.")
         conn.execute("INSERT OR REPLACE INTO powerbi_auto_settings VALUES (1, ?)", (json.dumps(value),))
     return value
+
+
+class RefreshBusy(ValueError):
+    pass
+
+
+def _require_idle(conn):
+    if conn.execute("SELECT 1 FROM powerbi_refresh_jobs WHERE status NOT IN ('completed','failed','skipped') LIMIT 1").fetchone():
+        raise RefreshBusy("Wait for the current dashboard refresh and F2 restoration to finish.")
+    if conn.execute("""SELECT 1 FROM pipeline_runs WHERE status='running' AND id IN (
+            SELECT MAX(id) FROM pipeline_runs WHERE extract_mode != 'surveycto_test'
+            GROUP BY pipeline_version) LIMIT 1""").fetchone():
+        raise RefreshBusy("Wait for the current data update to finish before refreshing a dashboard.")
+
+
+def queue_manual_refresh(db, dataset_id, *, client=None, fabric_factory=FabricClient):
+    # Check before remote reads, then repeat under the write lock to prevent a
+    # concurrent manual refresh or pipeline reservation from slipping through.
+    with connect_database(db) as conn:
+        _require_idle(conn)
+    resource = settings(db).get("capacityResourceId")
+    if not resource:
+        raise ValueError("Configure FABRIC_CAPACITY_RESOURCE_ID on the portal server before refreshing reports.")
+    resource = validate_resource_id(resource)
+    client = client or PowerBIClient(PowerBIConfig.from_env())
+    reports = [{"id": r["id"], "name": r.get("name") or r["id"], "datasetId": dataset_id}
+               for r in client.list_reports() if r.get("datasetId") == dataset_id]
+    if not dataset_id or not reports:
+        raise ValueError("Select a report with a semantic model from the configured workspace.")
+    workspace = client.get_workspace()
+    if not workspace.get("isOnDedicatedCapacity") or not workspace.get("capacityId"):
+        raise ValueError("The Power BI workspace must be assigned to the configured Fabric capacity.")
+    capacity = fabric_factory(resource).get()
+    if capacity.get("sku", {}).get("name") != "F2" or capacity.get("properties", {}).get("state") != "Active":
+        raise ValueError("The configured capacity must be active on F2 before refreshing reports.")
+    config = {"capacityResourceId": resource, "workspaceId": client.config.workspace_id,
+              "workspaceCapacityId": workspace["capacityId"], "reports": reports}
+    value = {"trigger": "manual", "config": config,
+             "targets": [{"datasetId": dataset_id, "names": [r["name"] for r in reports], "state": "pending"}],
+             "created": time.time(), "stageStarted": time.time(), "ownsCapacity": False,
+             "message": "Dashboard refresh queued; Fabric capacity will scale to F16 and return to F2.",
+             "error": "", "retryAt": 0}
+    with connect_database(db) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_idle(conn)
+        conn.execute("INSERT INTO powerbi_refresh_jobs (run_id,status,value,updated_at) VALUES (NULL,'queued',?,?)",
+                     (json.dumps(value), time.time()))
+    return latest_job(db)
 
 
 def csv_fingerprint(paths):
@@ -150,6 +210,7 @@ def latest_job(db):
         return None
     value = json.loads(row["value"])
     return {"id": row["id"], "runId": row["run_id"], "status": row["status"],
+            "trigger": value.get("trigger", "automatic"),
             "message": value["message"], "error": value.get("error", ""),
             "updatedAt": row["updated_at"], "active": row["status"] not in TERMINAL,
             "datasets": [{"datasetId": target["datasetId"], "completedAt": target.get("completedAt")}
@@ -217,29 +278,30 @@ def advance_job(db, job, *, fabric=None, client=None):
                 except Exception:
                     waiting = True
             if not waiting or time.time() - value["cancelStarted"] >= 300:
-                _restore(db, job, value, "Automatic refresh exceeded the six-hour capacity boost limit; unfinished data remains pending.")
+                _restore(db, job, value, "Dashboard refresh exceeded the six-hour capacity boost limit; unfinished data remains pending.")
             else:
                 value["message"] = "Capacity boost timed out; requesting refresh cancellation before restoring F2."
                 _save(db, job, value)
             return
 
         if job["status"] == "queued":
-            with connect_database(db) as conn:
-                run = conn.execute("SELECT status FROM pipeline_runs WHERE id=?", (job["run_id"],)).fetchone()
-            if not run or run[0] == "running":
-                return
-            if run[0] != "completed":
-                value["message"] = "Data update was not fully successful; automatic refresh skipped."
-                _save(db, job, value, "failed")
-                return
+            if value.get("trigger") != "manual":
+                with connect_database(db) as conn:
+                    run = conn.execute("SELECT status FROM pipeline_runs WHERE id=?", (job["run_id"],)).fetchone()
+                if not run or run[0] == "running":
+                    return
+                if run[0] != "completed":
+                    value["message"] = "Data update was not fully successful; automatic refresh skipped."
+                    _save(db, job, value, "failed")
+                    return
             if client.config.workspace_id != cfg["workspaceId"] or client.get_workspace().get("capacityId") != cfg["workspaceCapacityId"]:
-                raise ValueError("Power BI workspace or capacity changed. Save automatic refresh settings again.")
+                raise ValueError("Power BI workspace or capacity changed. Check the report and capacity settings before retrying.")
             actual = {r["id"]: r.get("datasetId") for r in client.list_reports()}
             if any(actual.get(r["id"]) != r["datasetId"] for r in cfg["reports"]):
-                raise ValueError("A selected dashboard's semantic model changed. Save automatic refresh settings again.")
+                raise ValueError("A selected dashboard's semantic model changed. Check the report and capacity settings before retrying.")
             cap = fabric.get()
             if cap.get("sku", {}).get("name") != "F2" or cap.get("properties", {}).get("state") != "Active":
-                raise ValueError("Automatic refresh requires the capacity to start active on F2.")
+                raise ValueError("Dashboard refresh requires the capacity to start active on F2.")
             value["ownsCapacity"] = True
             value["boostStarted"] = time.time()
             value["message"] = "Scaling Fabric capacity to F16."
@@ -260,7 +322,7 @@ def advance_job(db, job, *, fabric=None, client=None):
                     # A failed dataset stays pending even if other datasets completed.
                     with connect_database(db) as conn:
                         for item in value["targets"]:
-                            if item["state"] == "completed":
+                            if item["state"] == "completed" and value.get("trigger") != "manual":
                                 conn.execute("INSERT OR REPLACE INTO powerbi_refresh_watermarks VALUES (?,?,?,?)",
                                              (cfg["workspaceId"], item["datasetId"], value["version"], value["fingerprint"]))
                         value["message"] = "Dashboard refresh failed; Fabric capacity restored to F2." if value["error"] else "Dashboards refreshed; Fabric capacity restored to F2."
@@ -326,7 +388,7 @@ def advance_job(db, job, *, fabric=None, client=None):
     except Exception as exc:
         value["retryAt"] = time.time() + 30
         if job["status"] == "queued":
-            value["message"] = "Automatic dashboard refresh could not start."
+            value["message"] = "Dashboard refresh could not start."
             value["error"] = str(exc)
             _save(db, job, value, "failed")
         elif job["status"] == "scaling_up" and time.time() - value["stageStarted"] > 900:

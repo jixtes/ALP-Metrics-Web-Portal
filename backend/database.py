@@ -132,9 +132,9 @@ def initialize_database(db_path: Path) -> None:
 
 
 class PipelineAlreadyRunning(Exception):
-    def __init__(self, run_id: int):
+    def __init__(self, run_id: int | None):
         self.run_id = run_id
-        super().__init__("A data update is already in progress. Wait for it to finish.")
+        super().__init__("A data update or dashboard refresh is already in progress. Wait for it to finish.")
 
 
 def insert_pipeline_run(
