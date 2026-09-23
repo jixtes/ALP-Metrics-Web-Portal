@@ -127,6 +127,9 @@ def initialize_database(db_path: Path) -> None:
         connection.execute("DELETE FROM survey_records")
         connection.commit()
 
+    from .auto_refresh import initialize
+    initialize(db_path)
+
 
 class PipelineAlreadyRunning(Exception):
     def __init__(self, run_id: int):
@@ -162,6 +165,9 @@ def insert_pipeline_run(
             """).fetchone()
             if active:
                 raise PipelineAlreadyRunning(active["id"])
+            refresh = connection.execute("SELECT run_id FROM powerbi_refresh_jobs WHERE status NOT IN ('completed','failed','skipped') LIMIT 1").fetchone()
+            if refresh:
+                raise PipelineAlreadyRunning(refresh["run_id"])
         cursor = connection.execute(
             """
             INSERT INTO pipeline_runs (

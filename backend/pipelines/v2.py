@@ -203,6 +203,9 @@ def run_pipeline_and_snapshot(db_path: Path, *, run_id: int | None = None,
             if not refreshed and not errors and not empty_jobs:
                 errors.append("V2 did not produce any project snapshots.")
             status = "partial" if errors and refreshed else "failed" if errors else "completed"
+            if status == "completed" and upload_to_sharepoint:
+                from ..auto_refresh import record_data_update
+                record_data_update(db_path, run_id, "V2", uploads)
             message = f"V2 updated {len(summaries)} survey snapshots ({sum(r['submission_count'] for r in summaries)} processed records)."
             for job in empty_jobs:
                 message += (f" {job['project_name']} / {job['survey_name']}: skipped because the configured source"

@@ -23,7 +23,7 @@ const settingsSections = [
   { key: "pipeline", label: "Pipeline", description: "Update pipeline code and inspect the latest run logs." },
   { key: "users", label: "Manage users", description: "Create users and send password reset emails." },
   { key: "roles", label: "Manage user roles", description: "Create, update, and delete non-admin roles and access rules." },
-  { key: "powerbi", label: "Power BI dashboards", description: "Choose which reports appear on the landing page." },
+  { key: "powerbi", label: "Power BI dashboards", description: "Choose visible dashboards and automatic refresh settings." },
 ];
 
 const surveyColumns = [
@@ -480,7 +480,12 @@ function App() {
   const runRequestRef = useRef(false);
   const runningPipelineRuns = Object.values(dashboard.latest_runs ?? {}).filter((run) => run?.status === "running");
   const runningPipelineRunIds = runningPipelineRuns.map((run) => run.id).sort().join(",");
-  const isUpdating = isRunning || runningPipelineRuns.length > 0;
+  const [autoRefreshJob, setAutoRefreshJob] = useState(null);
+  const [autoRefreshSettings, setAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
+  const [isSavingAutoRefresh, setIsSavingAutoRefresh] = useState(false);
+  const [autoRefreshFeedback, setAutoRefreshFeedback] = useState("");
+  const [autoRefreshError, setAutoRefreshError] = useState("");
+  const isUpdating = isRunning || runningPipelineRuns.length > 0 || Boolean(autoRefreshJob?.active);
   const [pipelineStatus, setPipelineStatus] = useState(null);
   const [pipelineOutput, setPipelineOutput] = useState("");
   const [pipelineError, setPipelineError] = useState("");
@@ -833,7 +838,10 @@ function App() {
     setPowerBIError("");
 
     try {
-      const reportsData = await apiRequest("/api/powerbi/reports");
+      const [reportsData, refreshSettings] = await Promise.all([
+        apiRequest("/api/powerbi/reports"), apiRequest("/api/powerbi/auto-refresh"),
+      ]);
+      setAutoRefreshSettings({ reportIds: refreshSettings.reportIds ?? [], capacityResourceId: refreshSettings.capacityResourceId ?? "" });
       const reports = reportsData.reports ?? [];
       const validReportIds = new Set(reports.map((report) => report.id).filter(Boolean));
       setAvailableReports(reports);
@@ -950,6 +958,30 @@ function App() {
       setIsResetValidating(false);
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated || isIndividualReportRoute || isResetRoute) {
+      setAutoRefreshJob(null);
+      return;
+    }
+    let cancelled = false;
+    let pending = false;
+    async function pollRefresh() {
+      if (pending) return;
+      pending = true;
+      try {
+        const data = await apiRequest("/api/powerbi/auto-refresh/status");
+        if (!cancelled) setAutoRefreshJob(data.job ?? null);
+      } catch {
+        // Keep an active job visible during transient connectivity failures.
+      } finally {
+        pending = false;
+      }
+    }
+    pollRefresh();
+    const timer = window.setInterval(pollRefresh, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isAuthenticated, isIndividualReportRoute, isResetRoute]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1331,6 +1363,24 @@ function App() {
       setPowerBIError(saveError.message);
     } finally {
       setIsSavingPowerBI(false);
+    }
+  }
+
+  async function handleSaveAutoRefresh(event) {
+    event.preventDefault();
+    setIsSavingAutoRefresh(true);
+    setAutoRefreshFeedback("");
+    setAutoRefreshError("");
+    try {
+      const saved = await apiRequest("/api/powerbi/auto-refresh", { method: "PUT", body: autoRefreshSettings });
+      setAutoRefreshSettings({ reportIds: saved.reportIds ?? [], capacityResourceId: saved.capacityResourceId ?? "" });
+      setAutoRefreshFeedback(saved.reportIds?.length
+        ? "Automatic refresh saved. Selected dashboards will refresh after Update data when data has changed."
+        : "Automatic dashboard refresh is off.");
+    } catch (error) {
+      setAutoRefreshError(error.message);
+    } finally {
+      setIsSavingAutoRefresh(false);
     }
   }
 
@@ -2985,6 +3035,41 @@ function App() {
 
             {activeSettingsSection === "powerbi" ? (
               canManagePowerBI ? (
+                <>
+                <form className="powerbi-settings-form auto-refresh-settings" onSubmit={handleSaveAutoRefresh}>
+                  <div className="detail-section-heading">
+                    <h3>Automatic refresh after data updates</h3>
+                    <p>Select dashboards to refresh when Update data publishes new or changed survey data. Capacity scales to F16 during refresh and returns to F2 afterward.</p>
+                  </div>
+                  <label className="filter-label" htmlFor="auto-refresh-capacity">Fabric capacity resource ID</label>
+                  <input id="auto-refresh-capacity" type="text" value={autoRefreshSettings.capacityResourceId}
+                    placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.Fabric/capacities/..."
+                    disabled={isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}
+                    onChange={(event) => setAutoRefreshSettings((current) => ({ ...current, capacityResourceId: event.target.value }))} />
+                  <p className="run-meta">Use the capacity assigned to this Power BI workspace. Leave all dashboards unchecked to turn automatic refresh off.</p>
+                  <div className="report-picker-list">
+                    {availableReports.map((report) => (
+                      <label key={report.id} className="report-picker-item">
+                        <input type="checkbox" aria-label={`Auto-refresh ${report.name || "Untitled report"}`}
+                          checked={autoRefreshSettings.reportIds.includes(report.id)}
+                          disabled={!report.datasetId || isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}
+                          onChange={() => setAutoRefreshSettings((current) => ({ ...current, reportIds:
+                            current.reportIds.includes(report.id) ? current.reportIds.filter((id) => id !== report.id)
+                              : [...current.reportIds, report.id] }))} />
+                        <span>{report.name || "Untitled report"}{!report.datasetId ? " (no semantic model)" : ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {isPowerBILoading ? <p>Loading dashboards...</p> : null}
+                  {autoRefreshError ? <div className="alert-card" role="alert">{autoRefreshError}</div> : null}
+                  {autoRefreshFeedback ? <p role="status">{autoRefreshFeedback}</p> : null}
+                  {autoRefreshJob ? <p role="status">{autoRefreshJob.message}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}</p> : null}
+                  <div className="settings-actions">
+                    <button type="submit" disabled={isPowerBILoading || isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}>
+                      {isSavingAutoRefresh ? "Saving automatic refresh..." : "Save automatic refresh"}
+                    </button>
+                  </div>
+                </form>
                 <form className="powerbi-settings-form" onSubmit={handleSavePowerBIReports}>
                   <div className="settings-summary">
                     <div className="stat-card compact-stat-card">
@@ -3039,7 +3124,7 @@ function App() {
                                     event.stopPropagation();
                                     handleRefreshPowerBIReport(report);
                                   }}
-                                  disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId}
+                                  disabled={!report.datasetId || refreshingPowerBIDatasetId === report.datasetId || Boolean(autoRefreshJob?.active)}
                                 >
                                   {refreshingPowerBIDatasetId === report.datasetId ? "Refreshing..." : "Refresh report"}
                                 </button>
@@ -3137,6 +3222,7 @@ function App() {
                     </button>
                   </div>
                 </form>
+                </>
               ) : (
                 <div className="settings-placeholder">
                   <p>Power BI dashboard management is limited to admin accounts.</p>
@@ -3216,6 +3302,9 @@ function App() {
         </div>
       </section>
 
+      {autoRefreshJob ? <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
+        {autoRefreshJob.message}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
+      </section> : null}
       {error ? <section className="alert-card">{error}</section> : null}
       {powerBIError && !embeddedReports.length ? <section className="alert-card">{powerBIError}</section> : null}
       {powerBIMessage ? <section className="alert-card alert-card-success">{powerBIMessage}</section> : null}

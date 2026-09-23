@@ -152,6 +152,9 @@ class PowerBIClient:
         ).json()
         return payload.get("value", [])
 
+    def cancel_refresh(self, dataset_id: str, refresh_id: str) -> None:
+        self._request("DELETE", f"/groups/{self.config.workspace_id}/datasets/{dataset_id}/refreshes/{refresh_id}")
+
     def generate_embed_token(
         self,
         *,

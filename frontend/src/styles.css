@@ -2083,3 +2083,19 @@ tbody tr:hover,
   background: #dcfce7;
   color: #166534;
 }
+
+.auto-refresh-settings {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color, #dce4e5);
+}
+.auto-refresh-settings input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--accent);
+  font: inherit;
+}

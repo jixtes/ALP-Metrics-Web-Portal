@@ -223,6 +223,53 @@ expiry without reloading the report. Already-expired reports reload with a fresh
 token; temporary renewal failures retry after 30 seconds. Renewal uses the same
 authenticated endpoints and access rules as the original embed.
 
+### Automatic dashboard refresh after Update data
+
+In **Settings > Power BI dashboards > Automatic refresh after data updates**,
+enter the Azure Resource ID of the Fabric capacity assigned to the configured
+Power BI workspace, select dashboards, and save. This selection is separate from
+the landing-page dashboard selection. No dashboards are enabled automatically.
+`FABRIC_CAPACITY_RESOURCE_ID` can optionally prefill the capacity field; saved
+settings live in `instance/alp_metrics.db` and survive deployment.
+
+Successful normal V2 and V3 updates with all SharePoint uploads successful compare
+survey CSV contents against each selected semantic model's last successful refresh.
+Row/column ordering and file timestamps do not count as changes; additions,
+deletions and edits do. The first update after enabling a model refreshes once to
+establish its baseline. Models shared by multiple selected dashboards refresh once.
+V3 hashes CSVs in its export directory, excluding QC, individual reports and test
+survey folders. V2 hashes CSVs in successful project `data` folders. Failed/partial
+pipeline runs and skipped/failed uploads never start an automatic refresh.
+
+The worker records its progress in SQLite, scales F2 to F16, waits until active,
+refreshes selected semantic models sequentially, then restores and verifies F2.
+Failed models keep their previous fingerprint so the next Update data retries
+even if source data is unchanged. Normal data updates and manual portal refreshes
+are blocked while this workflow is active. The separate individual-report webhook
+retains its existing refresh behavior.
+
+The web service starts a background worker on Linux/macOS. A filesystem lock
+serializes workers sharing the same SQLite database; each step is persisted before
+remote mutations. Restarting the service resumes refresh monitoring/restoration.
+A lost refresh POST response is never blindly resubmitted or treated as success:
+the worker waits for active refreshes to finish, restores F2, and leaves the data
+pending. The capacity boost has a six-hour limit. On timeout, the worker requests
+cancellation of known refreshes, allows five minutes for cancellation, then restores
+F2 even if Power BI cannot confirm completion; unfinished refreshes may fail and
+their data remains pending. Azure/Power BI outages remain visibly pending and retry;
+F2 restoration cannot be guaranteed while Azure is unavailable. Keep the web service
+running and inspect any prolonged pending status. If the capacity is changed to a
+size other than F2/F16 externally, the worker waits rather than overwriting it.
+
+The portal app needs Azure resource permissions on the capacity as well as Power BI
+workspace/model access. Capacity resizing affects all workspaces on that capacity.
+Fabric background usage smoothing can still cause throttling after returning to F2.
+The existing Refresh report buttons continue to perform a direct refresh; the
+temporary capacity increase applies to automatic refresh after normal data updates.
+
+Run backend checks with `.venv/bin/python -m unittest discover -s tests` and embed
+token checks with `node --test frontend/src/powerbiSession.test.js`.
+
 Test-survey uploads from the local `files/test_survey` workspace and the
 SharePoint `test_survey` folder are excluded from the portal's general Survey
 data files table. Legacy `local_update` entries remain hidden as well.

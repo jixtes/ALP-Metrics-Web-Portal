@@ -102,6 +102,11 @@ def run_pipeline_and_snapshot(
                 else ""
             )
 
+            if publish_snapshot and upload_to_sharepoint:
+                from ..auto_refresh import record_data_update
+                record_data_update(db_path, run_id, "V3", upload_rows,
+                                   exports_root=config.root_dir / config.exports_dir)
+
             complete_pipeline_run(
                 db_path,
                 run_id=run_id,

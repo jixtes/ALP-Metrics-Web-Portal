@@ -37,6 +37,7 @@ from .service import (
 )
 from .survey_relay import register_survey_relay_routes
 from .surveycto_webhook import register_surveycto_webhook_route
+from . import auto_refresh
 
 
 INDIVIDUAL_REPORT_NAME = os.getenv("INDIVIDUAL_REPORT_NAME", "IR_PO_Baseline_v3_test").strip()
@@ -93,6 +94,48 @@ def create_app(config: dict | None = None) -> Flask:
     db_path = Path(app.config.get("DATABASE_PATH", APP_DB_PATH))
     initialize_database(db_path)
     register_surveycto_webhook_route(app, db_path)
+    if not app.config.get("TESTING"):
+        auto_refresh.start_worker(db_path)
+
+        @app.before_request
+        def ensure_refresh_worker():
+            auto_refresh.start_worker(db_path)
+
+    @app.get("/api/powerbi/auto-refresh")
+    @auth_required("session")
+    @roles_required("admin")
+    def get_auto_refresh_settings():
+        return jsonify(auto_refresh.settings(db_path))
+
+    @app.put("/api/powerbi/auto-refresh")
+    @auth_required("session")
+    @roles_required("admin")
+    def put_auto_refresh_settings():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "Expected automatic refresh settings."}), 400
+        try:
+            return jsonify(auto_refresh.save_settings(db_path, payload))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception:
+            return jsonify({"error": "Could not verify Fabric capacity or Power BI access. Check the resource ID and app permissions."}), 502
+
+    @app.get("/api/powerbi/auto-refresh/status")
+    @auth_required("session")
+    def get_auto_refresh_status():
+        job = auto_refresh.latest_job(db_path)
+        if job and not current_user.has_role("admin"):
+            job.pop("dashboards", None)
+            job.pop("error", None)
+            job["message"] = {
+                "queued": "Dashboard refresh queued.", "scaling_up": "Scaling capacity to F16.",
+                "refreshing": "Refreshing dashboards.", "restoring": "Restoring capacity to F2.",
+                "completed": "Dashboards refreshed; capacity restored to F2.",
+                "skipped": "No changed data; dashboard refresh skipped.",
+                "failed": "Automatic dashboard refresh failed. Check with an administrator.",
+            }.get(job["status"], "Dashboard refresh in progress.")
+        return jsonify({"job": job})
 
     @app.get("/api/health")
     def healthcheck():
@@ -394,6 +437,8 @@ def create_app(config: dict | None = None) -> Flask:
     @auth_required("session")
     @roles_required("admin")
     def refresh_powerbi_dataset():
+        if auto_refresh.active_job(db_path):
+            return jsonify({"error": "Wait for the automatic dashboard refresh and F2 restoration to finish."}), 409
         payload = request.get_json(silent=True) or {}
         dataset_id = str(payload.get("datasetId", "")).strip() or None
 
