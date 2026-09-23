@@ -255,7 +255,7 @@ function loadPowerBIClient() {
   return powerBIClientPromise;
 }
 
-function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isActive = true }) {
+function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isActive = true, isRefreshing = false, refreshedAt }) {
   const cardRef = useRef(null);
   const embedContainerRef = useRef(null);
   const embeddedReportRef = useRef(null);
@@ -394,7 +394,9 @@ function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isA
     await cardRef.current.requestFullscreen();
   }
 
-  const latestRefreshAt = report.latestRefresh?.endTime || report.latestRefresh?.startTime;
+  const embeddedRefreshAt = report.latestRefresh?.endTime || report.latestRefresh?.startTime;
+  const latestRefreshAt = refreshedAt && (!embeddedRefreshAt || Date.parse(refreshedAt) > Date.parse(embeddedRefreshAt))
+    ? refreshedAt : embeddedRefreshAt;
 
   return (
     <article className="detail-card powerbi-card" ref={cardRef}>
@@ -403,7 +405,9 @@ function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isA
           <h2>{report.reportName || "Power BI dashboard"}</h2>
         </div>
         <div className="powerbi-heading-actions">
-          {showLastRefresh ? <span className="powerbi-refresh-meta">Last refresh {formatDate(latestRefreshAt)}</span> : null}
+          {showLastRefresh ? <span className="powerbi-refresh-meta" role="status">
+            {isRefreshing ? "Refreshing…" : `Last refresh ${formatDate(latestRefreshAt)}`}
+          </span> : null}
           <button
             type="button"
             className="secondary-button"
@@ -481,6 +485,7 @@ function App() {
   const runningPipelineRuns = Object.values(dashboard.latest_runs ?? {}).filter((run) => run?.status === "running");
   const runningPipelineRunIds = runningPipelineRuns.map((run) => run.id).sort().join(",");
   const [autoRefreshJob, setAutoRefreshJob] = useState(null);
+  const [lastAutoRefreshByDataset, setLastAutoRefreshByDataset] = useState({});
   const [autoRefreshSettings, setAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const [isSavingAutoRefresh, setIsSavingAutoRefresh] = useState(false);
   const [autoRefreshFeedback, setAutoRefreshFeedback] = useState("");
@@ -962,6 +967,7 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated || isIndividualReportRoute || isResetRoute) {
       setAutoRefreshJob(null);
+      setLastAutoRefreshByDataset({});
       return;
     }
     let cancelled = false;
@@ -970,8 +976,22 @@ function App() {
       if (pending) return;
       pending = true;
       try {
-        const data = await apiRequest("/api/powerbi/auto-refresh/status");
-        if (!cancelled) setAutoRefreshJob(data.job ?? null);
+        const data = await apiRequest(`/api/powerbi/auto-refresh/status${accessPreviewQuery(accessPreviewParams)}`);
+        if (!cancelled) {
+          setAutoRefreshJob(data.job ?? null);
+          const completed = (data.job?.datasets ?? []).filter((item) => item.completedAt);
+          if (completed.length) {
+            setLastAutoRefreshByDataset((current) => {
+              const next = { ...current };
+              for (const item of completed) {
+                if (!next[item.datasetId] || Date.parse(item.completedAt) > Date.parse(next[item.datasetId])) {
+                  next[item.datasetId] = item.completedAt;
+                }
+              }
+              return next;
+            });
+          }
+        }
       } catch {
         // Keep an active job visible during transient connectivity failures.
       } finally {
@@ -3769,7 +3789,9 @@ function App() {
             const isActive = currentView === "dashboard" && `powerbi:${report.reportId}` === activeDashboardTab;
             return (
               <div key={report.reportId} hidden={!isActive}>
-                <EmbeddedPowerBIReport report={report} renewToken={renewPowerBIToken} isActive={isActive} />
+                <EmbeddedPowerBIReport report={report} renewToken={renewPowerBIToken} isActive={isActive}
+                  isRefreshing={Boolean(autoRefreshJob?.active && autoRefreshJob.datasets?.some((item) => item.datasetId === report.datasetId))}
+                  refreshedAt={lastAutoRefreshByDataset[report.datasetId]} />
               </div>
             );
           })}

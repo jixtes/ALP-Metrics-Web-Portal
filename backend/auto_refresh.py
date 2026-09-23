@@ -150,6 +150,8 @@ def latest_job(db):
     return {"id": row["id"], "runId": row["run_id"], "status": row["status"],
             "message": value["message"], "error": value.get("error", ""),
             "updatedAt": row["updated_at"], "active": row["status"] not in TERMINAL,
+            "datasets": [{"datasetId": target["datasetId"], "completedAt": target.get("completedAt")}
+                         for target in value["targets"]],
             "dashboards": [name for target in value["targets"] for name in target["names"]]}
 
 
@@ -205,6 +207,8 @@ def advance_job(db, job, *, fabric=None, client=None):
                     result = next((r for r in history if r.get("requestId") == item["requestId"]), None)
                     if result and result.get("status") in REFRESH_TERMINAL:
                         item["state"] = "completed" if result["status"] == "Completed" else "failed"
+                        if item["state"] == "completed":
+                            item["completedAt"] = result.get("endTime")
                         continue
                     waiting = True
                     client.cancel_refresh(item["datasetId"], item["requestId"])
@@ -310,6 +314,8 @@ def advance_job(db, job, *, fabric=None, client=None):
                 result = next((r for r in history if r.get("requestId") == item["requestId"]), None)
                 if result and result.get("status") in REFRESH_TERMINAL:
                     item["state"] = "completed" if result["status"] == "Completed" else "failed"
+                    if item["state"] == "completed":
+                        item["completedAt"] = result.get("endTime")
                     if item["state"] == "failed":
                         value["error"] = "Refresh failed for " + ", ".join(item["names"]) + "."
                     _save(db, job, value)

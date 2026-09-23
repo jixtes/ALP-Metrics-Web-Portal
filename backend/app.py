@@ -124,8 +124,14 @@ def create_app(config: dict | None = None) -> Flask:
     @app.get("/api/powerbi/auto-refresh/status")
     @auth_required("session")
     def get_auto_refresh_status():
+        preview, preview_error = _user_preview_from_request()
+        if preview_error:
+            return jsonify({"error": preview_error}), 403
         job = auto_refresh.latest_job(db_path)
-        if job and not current_user.has_role("admin"):
+        if job and (preview or not current_user.has_role("admin")):
+            selections = _filter_powerbi_selections_for_access(fetch_powerbi_report_selections(db_path), preview)
+            allowed_datasets = {item.get("dataset_id") for item in selections}
+            job["datasets"] = [item for item in job["datasets"] if item["datasetId"] in allowed_datasets]
             job.pop("dashboards", None)
             job.pop("error", None)
             job["message"] = {

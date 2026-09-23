@@ -112,6 +112,14 @@ class AutoRefreshTests(unittest.TestCase):
         self.new_run()
         self.assertEqual(auto.latest_job(self.db)['status'], 'queued')
 
+    def test_status_identifies_models_and_keeps_actual_refresh_completion_time(self):
+        self.start_refresh()
+        self.assertEqual(auto.latest_job(self.db)['datasets'], [{'datasetId': 'dataset', 'completedAt': None}])
+        self.history[-1]['endTime'] = '2026-09-23T09:12:00Z'
+        self.finish_refresh()
+        self.assertEqual(auto.latest_job(self.db)['datasets'], [
+            {'datasetId': 'dataset', 'completedAt': '2026-09-23T09:12:00Z'}])
+
     def test_failure_restores_and_remains_pending(self):
         self.start_refresh()
         self.finish_refresh('Failed')
@@ -266,3 +274,19 @@ class AutoRefreshAPITests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/powerbi/auto-refresh').json['capacityResourceId'], RESOURCE)
         for payload in [[], {'reportIds': 'bad'}, {'reportIds': ['r1'], 'capacityResourceId': 'https://evil.test'}]:
             self.assertEqual(self.client.put('/api/powerbi/auto-refresh', json=payload).status_code, 400)
+
+    def test_status_hides_models_that_are_not_available_to_the_user(self):
+        self.login()
+        from backend.auth import db, User
+        with self.app.app_context():
+            User.query.filter_by(email='auto@example.com').one().roles = []
+            db.session.commit()
+        job = {'id': 1, 'active': True, 'status': 'refreshing', 'message': 'Refreshing private dashboard',
+               'error': 'private details', 'dashboards': ['private dashboard'],
+               'datasets': [{'datasetId': 'allowed', 'completedAt': None}, {'datasetId': 'private', 'completedAt': None}]}
+        with patch('backend.app.auto_refresh.latest_job', return_value=job), patch(
+            'backend.app.fetch_powerbi_report_selections', return_value=[{'dataset_id': 'allowed'}]):
+            response = self.client.get('/api/powerbi/auto-refresh/status')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['job']['datasets'], [{'datasetId': 'allowed', 'completedAt': None}])
+        self.assertNotIn('private', json.dumps(response.json))
