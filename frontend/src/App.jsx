@@ -495,12 +495,12 @@ function App() {
   const [savedAutoRefreshSettings, setSavedAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const isUpdating = isRunning || runningPipelineRuns.length > 0 || Boolean(autoRefreshJob?.active);
   // Failure notices belong to the page that observed the job, not future visits.
-  const showRefreshStatus = Boolean(autoRefreshJob) && (
-    autoRefreshJob.status !== "failed" || autoRefreshJob.id === observedRefreshJobId
+  const showRefreshStatus = Boolean(autoRefreshJob?.active) || (
+    autoRefreshJob?.status === "failed" && autoRefreshJob.id === observedRefreshJobId
   );
   const refreshStatusMessage = autoRefreshJob?.active
     ? `Refreshing ${autoRefreshJob.dashboards?.join(", ") || "dashboards"}…`
-    : autoRefreshJob?.message;
+    : "Dashboard refresh failed.";
   const [pipelineStatus, setPipelineStatus] = useState(null);
   const [pipelineOutput, setPipelineOutput] = useState("");
   const [pipelineError, setPipelineError] = useState("");
@@ -2356,7 +2356,7 @@ function App() {
           </section>
         ) : null}
         {showRefreshStatus && autoRefreshJob?.trigger === "manual" && activeSettingsSection === "powerbi" ? (
-          <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
+          <section className="alert-card" role="status">
             {refreshStatusMessage}
             {autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
           </section>
@@ -3320,7 +3320,7 @@ function App() {
         </div>
       </section>
 
-      {showRefreshStatus ? <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
+      {showRefreshStatus ? <section className="alert-card" role="status">
         {refreshStatusMessage}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
       </section> : null}
       {error ? <section className="alert-card">{error}</section> : null}
