@@ -485,10 +485,15 @@ function App() {
   const runningPipelineRuns = Object.values(dashboard.latest_runs ?? {}).filter((run) => run?.status === "running");
   const runningPipelineRunIds = runningPipelineRuns.map((run) => run.id).sort().join(",");
   const [autoRefreshJob, setAutoRefreshJob] = useState(null);
+  const [observedRefreshJobId, setObservedRefreshJobId] = useState(null);
   const [lastAutoRefreshByDataset, setLastAutoRefreshByDataset] = useState({});
   const [autoRefreshSettings, setAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const [savedAutoRefreshSettings, setSavedAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const isUpdating = isRunning || runningPipelineRuns.length > 0 || Boolean(autoRefreshJob?.active);
+  // Failure notices belong to the page that observed the job, not future visits.
+  const showRefreshStatus = Boolean(autoRefreshJob) && (
+    autoRefreshJob.status !== "failed" || autoRefreshJob.id === observedRefreshJobId
+  );
   const refreshStatusMessage = autoRefreshJob?.active
     ? `Refreshing ${autoRefreshJob.dashboards?.join(", ") || "dashboards"}…`
     : autoRefreshJob?.message;
@@ -970,6 +975,7 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated || isIndividualReportRoute || isResetRoute) {
       setAutoRefreshJob(null);
+      setObservedRefreshJobId(null);
       setLastAutoRefreshByDataset({});
       return;
     }
@@ -982,6 +988,7 @@ function App() {
         const data = await apiRequest(`/api/powerbi/auto-refresh/status${accessPreviewQuery(accessPreviewParams)}`);
         if (!cancelled) {
           setAutoRefreshJob(data.job ?? null);
+          if (data.job?.active) setObservedRefreshJobId(data.job.id);
           const completed = (data.job?.datasets ?? []).filter((item) => item.completedAt);
           if (completed.length) {
             setLastAutoRefreshByDataset((current) => {
@@ -1427,6 +1434,7 @@ function App() {
         body: { datasetId },
       });
       setAutoRefreshJob(data.job);
+      setObservedRefreshJobId(data.job?.id ?? null);
       setPowerBIMessage("");
     } catch (refreshError) {
       setPowerBIError(refreshError.message);
@@ -2343,7 +2351,7 @@ function App() {
             {powerBIError || powerBIMessage}
           </section>
         ) : null}
-        {autoRefreshJob?.trigger === "manual" && activeSettingsSection === "powerbi" ? (
+        {showRefreshStatus && autoRefreshJob?.trigger === "manual" && activeSettingsSection === "powerbi" ? (
           <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
             {refreshStatusMessage}
             {autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
@@ -3314,7 +3322,7 @@ function App() {
         </div>
       </section>
 
-      {autoRefreshJob ? <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
+      {showRefreshStatus ? <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
         {refreshStatusMessage}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
       </section> : null}
       {error ? <section className="alert-card">{error}</section> : null}
