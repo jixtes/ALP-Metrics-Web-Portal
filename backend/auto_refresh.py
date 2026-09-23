@@ -39,9 +39,9 @@ def initialize(db):
 def settings(db):
     with connect_database(db) as conn:
         row = conn.execute("SELECT value FROM powerbi_auto_settings WHERE id=1").fetchone()
-    return json.loads(row[0]) if row else {
-        "reportIds": [], "reports": [], "capacityResourceId": os.getenv("FABRIC_CAPACITY_RESOURCE_ID", ""),
-    }
+    value = json.loads(row[0]) if row else {"reportIds": [], "reports": []}
+    value["capacityResourceId"] = value.get("capacityResourceId") or os.getenv("FABRIC_CAPACITY_RESOURCE_ID", "")
+    return value
 
 
 def save_settings(db, payload, client=None, fabric_factory=FabricClient):
@@ -49,9 +49,11 @@ def save_settings(db, payload, client=None, fabric_factory=FabricClient):
     if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
         raise ValueError("reportIds must be a list of dashboard IDs.")
     ids = list(dict.fromkeys(ids))
-    resource = str(payload.get("capacityResourceId") or "").strip()
+    resource = str(payload.get("capacityResourceId") or settings(db).get("capacityResourceId") or "").strip()
     value = {"reportIds": ids, "reports": [], "capacityResourceId": resource}
     if ids:
+        if not resource:
+            raise ValueError("Configure FABRIC_CAPACITY_RESOURCE_ID on the portal server before enabling automatic refresh.")
         resource = validate_resource_id(resource)
         client = client or PowerBIClient(PowerBIConfig.from_env())
         reports = {r["id"]: r for r in client.list_reports()}

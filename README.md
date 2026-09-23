@@ -225,12 +225,13 @@ authenticated endpoints and access rules as the original embed.
 
 ### Automatic dashboard refresh after Update data
 
-In **Settings > Power BI dashboards > Automatic refresh after data updates**,
-enter the Azure Resource ID of the Fabric capacity assigned to the configured
-Power BI workspace, select dashboards, and save. This selection is separate from
-the landing-page dashboard selection. No dashboards are enabled automatically.
-`FABRIC_CAPACITY_RESOURCE_ID` can optionally prefill the capacity field; saved
-settings live in `instance/alp_metrics.db` and survive deployment.
+In **Settings > Power BI dashboards**, check **Auto refresh** underneath each
+report's Access selector, then use **Save changes**. The checkbox is independent
+of whether the report appears on the landing page. No dashboards are enabled
+automatically. Existing saved capacity configuration is retained. For a new setup,
+set `FABRIC_CAPACITY_RESOURCE_ID` in the portal's `.env` to the Azure Resource ID of
+the capacity assigned to the Power BI workspace. Settings live in
+`instance/alp_metrics.db` and survive deployment.
 
 Successful normal V2 and V3 updates with all SharePoint uploads successful compare
 survey CSV contents against each selected semantic model's last successful refresh.

@@ -92,6 +92,19 @@ class AutoRefreshTests(unittest.TestCase):
         self.csv.write_text('id,value\n1,a\n2,b\n2,b\n')
         self.assertNotEqual(before, auto.csv_fingerprint([('data', self.csv)]))
 
+    def test_checkbox_save_retains_capacity_without_a_visible_capacity_field(self):
+        saved = auto.save_settings(self.db, {'reportIds': ['r2']}, client=self.client,
+                                   fabric_factory=lambda _: self.fabric)
+        self.assertEqual(saved['capacityResourceId'], RESOURCE)
+        self.assertEqual(saved['reportIds'], ['r2'])
+        self.assertEqual(auto.save_settings(self.db, {'reportIds': []})['capacityResourceId'], RESOURCE)
+
+    def test_capacity_can_be_configured_on_server_when_saved_value_is_empty(self):
+        with connect_database(self.db) as conn:
+            conn.execute('UPDATE powerbi_auto_settings SET value=? WHERE id=1', (json.dumps({'reportIds': [], 'capacityResourceId': ''}),))
+        with patch.dict(os.environ, {'FABRIC_CAPACITY_RESOURCE_ID': RESOURCE}):
+            self.assertEqual(auto.settings(self.db)['capacityResourceId'], RESOURCE)
+
     def test_full_cycle_deduplicates_semantic_models_and_restores_f2(self):
         self.save(['r1', 'r2'])
         self.start_refresh()

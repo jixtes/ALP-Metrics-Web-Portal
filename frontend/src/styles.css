@@ -2084,18 +2084,12 @@ tbody tr:hover,
   color: #166534;
 }
 
-.auto-refresh-settings {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-color, #dce4e5);
+.powerbi-auto-refresh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
-.auto-refresh-settings input[type="text"] {
-  width: 100%;
-  min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--accent);
-  font: inherit;
-}
+.powerbi-auto-refresh input { margin: 0; }

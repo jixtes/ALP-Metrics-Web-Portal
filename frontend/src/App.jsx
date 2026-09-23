@@ -487,9 +487,7 @@ function App() {
   const [autoRefreshJob, setAutoRefreshJob] = useState(null);
   const [lastAutoRefreshByDataset, setLastAutoRefreshByDataset] = useState({});
   const [autoRefreshSettings, setAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
-  const [isSavingAutoRefresh, setIsSavingAutoRefresh] = useState(false);
-  const [autoRefreshFeedback, setAutoRefreshFeedback] = useState("");
-  const [autoRefreshError, setAutoRefreshError] = useState("");
+  const [savedAutoRefreshSettings, setSavedAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const isUpdating = isRunning || runningPipelineRuns.length > 0 || Boolean(autoRefreshJob?.active);
   const [pipelineStatus, setPipelineStatus] = useState(null);
   const [pipelineOutput, setPipelineOutput] = useState("");
@@ -846,7 +844,9 @@ function App() {
       const [reportsData, refreshSettings] = await Promise.all([
         apiRequest("/api/powerbi/reports"), apiRequest("/api/powerbi/auto-refresh"),
       ]);
-      setAutoRefreshSettings({ reportIds: refreshSettings.reportIds ?? [], capacityResourceId: refreshSettings.capacityResourceId ?? "" });
+      const autoSettings = { reportIds: refreshSettings.reportIds ?? [], capacityResourceId: refreshSettings.capacityResourceId ?? "" };
+      setAutoRefreshSettings(autoSettings);
+      setSavedAutoRefreshSettings(autoSettings);
       const reports = reportsData.reports ?? [];
       const validReportIds = new Set(reports.map((report) => report.id).filter(Boolean));
       setAvailableReports(reports);
@@ -1348,7 +1348,28 @@ function App() {
     setPowerBIError("");
     setPowerBIMessage("");
 
+    let autoRefreshSaved = false;
     try {
+      const displayChanged = JSON.stringify(selectedPowerBIReports) !== JSON.stringify(savedReportIds) ||
+        selectedPowerBIReports.some((reportId) => {
+          const current = powerBIReportAccess[reportId] ?? { projectScope: "all", allowedProjectRefs: [] };
+          const saved = savedPowerBIReportAccess[reportId] ?? { projectScope: "all", allowedProjectRefs: [] };
+          return current.projectScope !== saved.projectScope ||
+            JSON.stringify([...current.allowedProjectRefs].sort()) !== JSON.stringify([...saved.allowedProjectRefs].sort());
+        });
+      const autoRefreshChanged = JSON.stringify([...autoRefreshSettings.reportIds].sort()) !==
+        JSON.stringify([...savedAutoRefreshSettings.reportIds].sort());
+      if (autoRefreshChanged) {
+        const saved = await apiRequest("/api/powerbi/auto-refresh", { method: "PUT", body: autoRefreshSettings });
+        const autoSettings = { reportIds: saved.reportIds ?? [], capacityResourceId: saved.capacityResourceId ?? "" };
+        setAutoRefreshSettings(autoSettings);
+        setSavedAutoRefreshSettings(autoSettings);
+        autoRefreshSaved = true;
+      }
+      if (!displayChanged) {
+        setPowerBIMessage("Power BI dashboard settings updated.");
+        return;
+      }
       const data = await apiRequest("/api/powerbi/selections", {
         method: "PUT",
         body: {
@@ -1377,30 +1398,12 @@ function App() {
         });
         return nextAccess;
       });
-      setPowerBIMessage("Power BI landing page selection updated.");
+      setPowerBIMessage("Power BI dashboard settings updated.");
       await loadEmbeddedPowerBIState();
     } catch (saveError) {
-      setPowerBIError(saveError.message);
+      setPowerBIError(autoRefreshSaved ? `Automatic refresh saved, but dashboard display settings could not be saved. ${saveError.message}` : saveError.message);
     } finally {
       setIsSavingPowerBI(false);
-    }
-  }
-
-  async function handleSaveAutoRefresh(event) {
-    event.preventDefault();
-    setIsSavingAutoRefresh(true);
-    setAutoRefreshFeedback("");
-    setAutoRefreshError("");
-    try {
-      const saved = await apiRequest("/api/powerbi/auto-refresh", { method: "PUT", body: autoRefreshSettings });
-      setAutoRefreshSettings({ reportIds: saved.reportIds ?? [], capacityResourceId: saved.capacityResourceId ?? "" });
-      setAutoRefreshFeedback(saved.reportIds?.length
-        ? "Automatic refresh saved. Selected dashboards will refresh after Update data when data has changed."
-        : "Automatic dashboard refresh is off.");
-    } catch (error) {
-      setAutoRefreshError(error.message);
-    } finally {
-      setIsSavingAutoRefresh(false);
     }
   }
 
@@ -3055,41 +3058,6 @@ function App() {
 
             {activeSettingsSection === "powerbi" ? (
               canManagePowerBI ? (
-                <>
-                <form className="powerbi-settings-form auto-refresh-settings" onSubmit={handleSaveAutoRefresh}>
-                  <div className="detail-section-heading">
-                    <h3>Automatic refresh after data updates</h3>
-                    <p>Select dashboards to refresh when Update data publishes new or changed survey data. Capacity scales to F16 during refresh and returns to F2 afterward.</p>
-                  </div>
-                  <label className="filter-label" htmlFor="auto-refresh-capacity">Fabric capacity resource ID</label>
-                  <input id="auto-refresh-capacity" type="text" value={autoRefreshSettings.capacityResourceId}
-                    placeholder="/subscriptions/.../resourceGroups/.../providers/Microsoft.Fabric/capacities/..."
-                    disabled={isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}
-                    onChange={(event) => setAutoRefreshSettings((current) => ({ ...current, capacityResourceId: event.target.value }))} />
-                  <p className="run-meta">Use the capacity assigned to this Power BI workspace. Leave all dashboards unchecked to turn automatic refresh off.</p>
-                  <div className="report-picker-list">
-                    {availableReports.map((report) => (
-                      <label key={report.id} className="report-picker-item">
-                        <input type="checkbox" aria-label={`Auto-refresh ${report.name || "Untitled report"}`}
-                          checked={autoRefreshSettings.reportIds.includes(report.id)}
-                          disabled={!report.datasetId || isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}
-                          onChange={() => setAutoRefreshSettings((current) => ({ ...current, reportIds:
-                            current.reportIds.includes(report.id) ? current.reportIds.filter((id) => id !== report.id)
-                              : [...current.reportIds, report.id] }))} />
-                        <span>{report.name || "Untitled report"}{!report.datasetId ? " (no semantic model)" : ""}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {isPowerBILoading ? <p>Loading dashboards...</p> : null}
-                  {autoRefreshError ? <div className="alert-card" role="alert">{autoRefreshError}</div> : null}
-                  {autoRefreshFeedback ? <p role="status">{autoRefreshFeedback}</p> : null}
-                  {autoRefreshJob ? <p role="status">{autoRefreshJob.message}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}</p> : null}
-                  <div className="settings-actions">
-                    <button type="submit" disabled={isPowerBILoading || isSavingAutoRefresh || Boolean(autoRefreshJob?.active)}>
-                      {isSavingAutoRefresh ? "Saving automatic refresh..." : "Save automatic refresh"}
-                    </button>
-                  </div>
-                </form>
                 <form className="powerbi-settings-form" onSubmit={handleSavePowerBIReports}>
                   <div className="settings-summary">
                     <div className="stat-card compact-stat-card">
@@ -3114,15 +3082,18 @@ function App() {
                         const isChecked = selectedPowerBIReports.includes(report.id);
                         const reportAccess = powerBIReportAccess[report.id] ?? { projectScope: "all", allowedProjectRefs: [] };
                         return (
-                          <label key={report.id} className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}>
+                          <div key={report.id} className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}>
                             <input
+                              id={`powerbi-visible-${report.id}`}
+                              aria-label={`Show ${report.name || "Untitled report"} on landing page`}
                               type="checkbox"
+                              disabled={isSavingPowerBI}
                               checked={isChecked}
                               onChange={() => togglePowerBIReport(report.id)}
                             />
                             <div className="powerbi-report-layout">
                               <div className="powerbi-report-details">
-                                <strong>{report.name || "Untitled report"}</strong>
+                                <label htmlFor={`powerbi-visible-${report.id}`}><strong>{report.name || "Untitled report"}</strong></label>
                                 <span>{report.id}</span>
                                 <small>{report.datasetId || "No dataset ID"}</small>
                                 {report.latestRefresh ? (
@@ -3155,15 +3126,26 @@ function App() {
                                 </label>
                                 <select
                                   id={`powerbi-access-${report.id}`}
+                                  disabled={isSavingPowerBI}
                                   value={reportAccess.projectScope}
                                   onChange={(event) => handlePowerBIReportAccessChange(report.id, event.target.value)}
                                 >
                                   <option value="all">All projects</option>
                                   <option value="restricted">Project specific</option>
                                 </select>
+                                <label className="powerbi-auto-refresh" htmlFor={`powerbi-auto-refresh-${report.id}`}>
+                                  <input id={`powerbi-auto-refresh-${report.id}`} type="checkbox"
+                                    aria-label={`Auto refresh ${report.name || "Untitled report"}`}
+                                    checked={autoRefreshSettings.reportIds.includes(report.id)}
+                                    disabled={!report.datasetId || isSavingPowerBI || Boolean(autoRefreshJob?.active)}
+                                    onChange={() => setAutoRefreshSettings((current) => ({ ...current, reportIds:
+                                      current.reportIds.includes(report.id) ? current.reportIds.filter((id) => id !== report.id)
+                                        : [...current.reportIds, report.id] }))} />
+                                  <span>Auto refresh</span>
+                                </label>
                               </div>
                             </div>
-                          </label>
+                          </div>
                         );
                       })}
                     </div>
@@ -3227,22 +3209,23 @@ function App() {
                   ) : null}
 
                   <div className="settings-actions">
-                    <button type="submit" disabled={isSavingPowerBI}>
-                      {isSavingPowerBI ? "Saving dashboard selection..." : "Save changes"}
+                    <button type="submit" disabled={isSavingPowerBI || isPowerBILoading}>
+                      {isSavingPowerBI ? "Saving changes..." : "Save changes"}
                     </button>
                     <button
                       type="button"
                       className="secondary-button"
                       onClick={() => {
                         setSelectedPowerBIReports(savedReportIds);
+                        setAutoRefreshSettings(savedAutoRefreshSettings);
                         setPowerBIReportAccess((current) => ({ ...current, ...savedPowerBIReportAccess }));
                       }}
+                      disabled={isSavingPowerBI || isPowerBILoading}
                     >
                       Reset to saved selection
                     </button>
                   </div>
                 </form>
-                </>
               ) : (
                 <div className="settings-placeholder">
                   <p>Power BI dashboard management is limited to admin accounts.</p>
