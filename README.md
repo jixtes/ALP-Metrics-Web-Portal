@@ -36,6 +36,68 @@ cd frontend
 npm install
 ```
 
+## Production V3 schedule
+
+The optional systemd units in `deploy/systemd/` run **V3 only** at 00:00, 03:00,
+06:00, 09:00, 12:00, 15:00, 18:00 and 21:00 **UTC** each day. The timer must be
+installed and enabled on the production VM; pulling the repository does not enable
+scheduled work on either production or developer machines.
+
+The runner loads the portal `.env`, uses its existing `instance/alp_metrics.db`,
+and calls the same V3 adapter as **Update data**: live SurveyCTO extraction,
+SharePoint uploads, database snapshots, then change detection for selected Power BI
+auto-refresh reports. It never forces a manual Power BI refresh. Existing automatic
+refresh rules, including the initial baseline refresh, remain in effect.
+
+Scheduled runs appear as **Automatic schedule** in the portal. Each scheduled
+attempt skips when any normal pipeline update or Power BI refresh/restoration is
+active, or when V3 was triggered in the preceding hour. The one-hour check uses
+**start time**, includes manual and scheduled attempts even if they failed, and
+excludes V2 and the separate individual-report webhook. The next attempt is the
+next three-hour slot; skipped attempts are recorded in the system journal without
+replacing the portal's latest run. Manual Update data remains available without
+the scheduler's one-hour cooldown.
+
+The database reservation is atomic across web workers and the scheduled process.
+A separate scheduler file lock prevents duplicate scheduled processes and allows
+an abandoned scheduled run to be marked failed after a crash/reboot. Manual run
+history and Power BI recovery jobs are preserved. The service has a two-hour data
+update timeout; the portal's independent worker handles any queued Power BI refresh
+and F2 restoration. `Persistent=true` catches up with one attempt after missed
+schedule times while the VM was down, subject to the same skip checks.
+
+The supplied units match the Azure VM's `azureuser` account and `/home/azureuser`
+repository layout. They use `/home/azureuser/web-portal/.venv/bin/python`; if the
+web service uses a different Python environment, change `ExecStart` to that same
+interpreter before installing. Keep shared service environment settings in the
+portal `.env` so both processes use the same credentials and repository paths.
+
+After pulling the portal changes, install on the **production VM**:
+
+```bash
+cd "$HOME/web-portal" && \
+.venv/bin/python scripts/run_scheduled_update.py --check && \
+sudo install -m 644 deploy/systemd/alp-metrics-update-v3.service /etc/systemd/system/ && \
+sudo install -m 644 deploy/systemd/alp-metrics-update-v3.timer /etc/systemd/system/ && \
+sudo systemd-analyze verify /etc/systemd/system/alp-metrics-update-v3.service /etc/systemd/system/alp-metrics-update-v3.timer && \
+sudo systemctl daemon-reload && \
+sudo systemctl enable --now alp-metrics-update-v3.timer && \
+systemctl list-timers --all alp-metrics-update-v3.timer
+```
+
+`--check` validates local paths and imports without running the pipeline or
+contacting external services. It does not verify external credentials. To inspect
+scheduled runs or disable future triggers:
+
+```bash
+sudo journalctl -u alp-metrics-update-v3.service -n 80 --no-pager
+sudo systemctl disable --now alp-metrics-update-v3.timer
+```
+
+Disabling the timer leaves any already running update to finish. Do not start the
+service manually merely to test installation: starting it performs a real data
+update and may queue a Power BI refresh if uploaded data changed.
+
 ## Pipeline Repository
 
 The portal's Update data control selects **V2** or **V3**. Both versions appear

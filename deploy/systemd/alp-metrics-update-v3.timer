@@ -1,0 +1,11 @@
+[Unit]
+Description=Update ALP Metrics V3 data every three hours
+
+[Timer]
+OnCalendar=*-*-* 00/3:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=alp-metrics-update-v3.service
+
+[Install]
+WantedBy=timers.target

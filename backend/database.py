@@ -137,6 +137,12 @@ class PipelineAlreadyRunning(Exception):
         super().__init__("A data update or dashboard refresh is already in progress. Wait for it to finish.")
 
 
+class PipelineRecentlyStarted(Exception):
+    def __init__(self, run_id: int):
+        self.run_id = run_id
+        super().__init__("This pipeline was triggered within the scheduling cooldown.")
+
+
 def insert_pipeline_run(
     db_path: Path,
     *,
@@ -150,9 +156,10 @@ def insert_pipeline_run(
     message: str | None = None,
     pipeline_version: str = "V3",
     reject_if_running: bool = False,
+    skip_if_started_since: str | None = None,
 ) -> int:
     with connect_database(db_path) as connection:
-        if reject_if_running:
+        if reject_if_running or skip_if_started_since:
             # Reserve the update across versions and concurrent web workers.
             connection.execute("BEGIN IMMEDIATE")
             active = connection.execute("""
@@ -168,6 +175,13 @@ def insert_pipeline_run(
             refresh = connection.execute("SELECT run_id FROM powerbi_refresh_jobs WHERE status NOT IN ('completed','failed','skipped') LIMIT 1").fetchone()
             if refresh:
                 raise PipelineAlreadyRunning(refresh["run_id"])
+            if skip_if_started_since:
+                recent = connection.execute("""SELECT id FROM pipeline_runs
+                    WHERE pipeline_version=? AND extract_mode != 'surveycto_test'
+                    AND julianday(started_at) >= julianday(?)
+                    ORDER BY id DESC LIMIT 1""", (pipeline_version, skip_if_started_since)).fetchone()
+                if recent:
+                    raise PipelineRecentlyStarted(recent["id"])
         cursor = connection.execute(
             """
             INSERT INTO pipeline_runs (
