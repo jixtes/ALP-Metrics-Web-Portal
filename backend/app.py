@@ -335,7 +335,7 @@ def create_app(config: dict | None = None) -> Flask:
             reports = client.list_reports()
             _prune_powerbi_selections(db_path, reports)
             dataset_cache: dict[str, dict] = {}
-            refresh_cache: dict[str, dict | None] = {}
+            refresh_cache = auto_refresh.successful_refreshes(db_path, config.workspace_id)
 
             def dataset_metadata(dataset_id: str | None) -> dict:
                 if not dataset_id:
@@ -348,15 +348,7 @@ def create_app(config: dict | None = None) -> Flask:
                 return dataset_cache[dataset_id]
 
             def latest_refresh(dataset_id: str | None) -> dict | None:
-                if not dataset_id:
-                    return None
-                if dataset_id not in refresh_cache:
-                    try:
-                        history = client.get_refresh_history(dataset_id, top=1)
-                        refresh_cache[dataset_id] = history[0] if history else None
-                    except Exception:
-                        refresh_cache[dataset_id] = None
-                return refresh_cache[dataset_id]
+                return refresh_cache.get(dataset_id)
 
             return jsonify(
                 {
@@ -482,18 +474,10 @@ def create_app(config: dict | None = None) -> Flask:
                 return jsonify({"error": preview_error}), 403
             selections = _filter_powerbi_selections_for_access(selections, preview)
             embed_configs = []
-            refresh_cache: dict[str, dict | None] = {}
+            refresh_cache = auto_refresh.successful_refreshes(db_path, config.workspace_id)
 
             def latest_refresh(dataset_id: str | None) -> dict | None:
-                if not dataset_id:
-                    return None
-                if dataset_id not in refresh_cache:
-                    try:
-                        history = client.get_refresh_history(dataset_id, top=1)
-                        refresh_cache[dataset_id] = history[0] if history else None
-                    except Exception:
-                        refresh_cache[dataset_id] = None
-                return refresh_cache[dataset_id]
+                return refresh_cache.get(dataset_id)
 
             for selection in selections:
                 try:

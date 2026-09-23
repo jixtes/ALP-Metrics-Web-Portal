@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
@@ -46,6 +47,47 @@ def initialize(db):
                 status TEXT NOT NULL, value TEXT NOT NULL, updated_at REAL NOT NULL)""")
             conn.execute("INSERT INTO powerbi_refresh_jobs SELECT * FROM powerbi_refresh_jobs_old")
             conn.execute("DROP TABLE powerbi_refresh_jobs_old")
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='powerbi_refresh_successes'").fetchone():
+            conn.execute("""CREATE TABLE powerbi_refresh_successes (
+                workspace TEXT NOT NULL, dataset TEXT NOT NULL, confirmed_at TEXT NOT NULL,
+                PRIMARY KEY(workspace, dataset))""")
+            # Preserve known successful timestamps from jobs recorded before this
+            # table existed. Failed attempts never establish a successful refresh.
+            for row in conn.execute("SELECT value FROM powerbi_refresh_jobs").fetchall():
+                _store_successes(conn, json.loads(row["value"]))
+
+
+def _store_successes(conn, value):
+    workspace = value.get("config", {}).get("workspaceId")
+    if not workspace:
+        return
+    for target in value.get("targets", []):
+        timestamp = target.get("confirmedAt") or target.get("completedAt")
+        if target.get("state") != "completed" or not timestamp:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        except (TypeError, ValueError):
+            continue
+        conn.execute("""INSERT INTO powerbi_refresh_successes VALUES (?, ?, ?)
+            ON CONFLICT(workspace, dataset) DO UPDATE SET confirmed_at=excluded.confirmed_at
+            WHERE excluded.confirmed_at > powerbi_refresh_successes.confirmed_at""",
+            (workspace, target["datasetId"], timestamp))
+
+
+def successful_refreshes(db, workspace):
+    with connect_database(db) as conn:
+        rows = conn.execute("SELECT dataset, confirmed_at FROM powerbi_refresh_successes WHERE workspace=?", (workspace,)).fetchall()
+    return {row["dataset"]: {"status": "Completed", "endTime": row["confirmed_at"]} for row in rows}
+
+
+def _record_result(target, result):
+    target["state"] = "completed" if result["status"] == "Completed" else "failed"
+    if target["state"] == "completed":
+        target["completedAt"] = result.get("endTime")
+        # This is when the portal received confirmation, not an attempted refresh's
+        # start/end time. Persist it even if F2 restoration is still in progress.
+        target["confirmedAt"] = datetime.fromtimestamp(time.time(), timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def settings(db):
@@ -213,7 +255,9 @@ def latest_job(db):
             "trigger": value.get("trigger", "automatic"),
             "message": value["message"], "error": value.get("error", ""),
             "updatedAt": row["updated_at"], "active": row["status"] not in TERMINAL,
-            "datasets": [{"datasetId": target["datasetId"], "completedAt": target.get("completedAt")}
+            "datasets": [{"datasetId": target["datasetId"],
+                          "completedAt": (target.get("confirmedAt") or target.get("completedAt"))
+                          if target.get("state") == "completed" else None}
                          for target in value["targets"]],
             "dashboards": [name for target in value["targets"] for name in target["names"]]}
 
@@ -231,6 +275,7 @@ def _save(db, job, value, status=None):
     with connect_database(db) as conn:
         conn.execute("UPDATE powerbi_refresh_jobs SET status=?, value=?, updated_at=? WHERE id=?",
                      (job["status"], json.dumps(value), time.time(), job["id"]))
+        _store_successes(conn, value)
 
 
 def _restore(db, job, value, error=""):
@@ -269,9 +314,7 @@ def advance_job(db, job, *, fabric=None, client=None):
                     history = client.get_refresh_history(item["datasetId"], top=60)
                     result = next((r for r in history if r.get("requestId") == item["requestId"]), None)
                     if result and result.get("status") in REFRESH_TERMINAL:
-                        item["state"] = "completed" if result["status"] == "Completed" else "failed"
-                        if item["state"] == "completed":
-                            item["completedAt"] = result.get("endTime")
+                        _record_result(item, result)
                         continue
                     waiting = True
                     client.cancel_refresh(item["datasetId"], item["requestId"])
@@ -377,9 +420,7 @@ def advance_job(db, job, *, fabric=None, client=None):
                     return
                 result = next((r for r in history if r.get("requestId") == item["requestId"]), None)
                 if result and result.get("status") in REFRESH_TERMINAL:
-                    item["state"] = "completed" if result["status"] == "Completed" else "failed"
-                    if item["state"] == "completed":
-                        item["completedAt"] = result.get("endTime")
+                    _record_result(item, result)
                     if item["state"] == "failed":
                         value["error"] = "Refresh failed for " + ", ".join(item["names"]) + "."
                     _save(db, job, value)

@@ -272,6 +272,14 @@ It requires the same configured capacity resource and permissions. Manual jobs d
 not create pipeline runs or change automatic data fingerprints. Normal pipeline
 updates and other portal refreshes are blocked until F2 restoration finishes.
 
+The dashboard and Settings **Last refresh** labels use the most recent successful
+refresh confirmation saved by the portal for that workspace and semantic model.
+The timestamp is when the worker observes Power BI's `Completed` result, and is
+persisted immediately, independently of capacity restoration. Failed or canceled
+attempts do not advance it, including after a page reload or service restart.
+Existing successful job timestamps are migrated on deployment; reports without a
+recorded successful refresh show an unavailable time until one completes.
+
 Run backend checks with `.venv/bin/python -m unittest discover -s tests` and embed
 token checks with `node --test frontend/src/powerbiSession.test.js`.
 

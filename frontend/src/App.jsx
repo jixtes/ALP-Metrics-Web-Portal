@@ -45,6 +45,12 @@ const uploadColumns = [
 
 let powerBIClientPromise;
 
+function successfulRefreshTime(latestRefresh, confirmedAt) {
+  const savedAt = latestRefresh?.status === "Completed" ? latestRefresh.endTime : null;
+  return confirmedAt && (!savedAt || Date.parse(confirmedAt) > Date.parse(savedAt))
+    ? confirmedAt : savedAt;
+}
+
 function formatDate(value) {
   if (!value) {
     return "N/A";
@@ -394,9 +400,7 @@ function EmbeddedPowerBIReport({ report, renewToken, showLastRefresh = true, isA
     await cardRef.current.requestFullscreen();
   }
 
-  const embeddedRefreshAt = report.latestRefresh?.endTime || report.latestRefresh?.startTime;
-  const latestRefreshAt = refreshedAt && (!embeddedRefreshAt || Date.parse(refreshedAt) > Date.parse(embeddedRefreshAt))
-    ? refreshedAt : embeddedRefreshAt;
+  const latestRefreshAt = successfulRefreshTime(report.latestRefresh, refreshedAt);
 
   return (
     <article className="detail-card powerbi-card" ref={cardRef}>
@@ -3097,6 +3101,7 @@ function App() {
                     <div className="report-picker-list">
                       {availableReports.map((report) => {
                         const isChecked = selectedPowerBIReports.includes(report.id);
+                        const refreshedAt = successfulRefreshTime(report.latestRefresh, lastAutoRefreshByDataset[report.datasetId]);
                         const reportAccess = powerBIReportAccess[report.id] ?? { projectScope: "all", allowedProjectRefs: [] };
                         return (
                           <div key={report.id} className={`report-picker-item${isChecked ? " report-picker-item-active" : ""}`}>
@@ -3113,14 +3118,7 @@ function App() {
                                 <label htmlFor={`powerbi-visible-${report.id}`}><strong>{report.name || "Untitled report"}</strong></label>
                                 <span>{report.id}</span>
                                 <small>{report.datasetId || "No dataset ID"}</small>
-                                {report.latestRefresh ? (
-                                  <small>
-                                    Last refresh: {formatDate(report.latestRefresh.endTime || report.latestRefresh.startTime)} (
-                                    {report.latestRefresh.status || "status unavailable"})
-                                  </small>
-                                ) : (
-                                  <small>Last refresh: unavailable</small>
-                                )}
+                                <small>Last refresh: {refreshedAt ? formatDate(refreshedAt) : "unavailable"}</small>
                                 {report.isEffectiveIdentityRequired ? (
                                   <small>Requires effective identity (RLS) for embedding.</small>
                                 ) : null}

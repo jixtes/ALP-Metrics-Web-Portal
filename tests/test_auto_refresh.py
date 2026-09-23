@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,8 +39,9 @@ class AutoRefreshTests(unittest.TestCase):
         self.history = []
         self.client.get_refresh_history.side_effect = lambda *a, **kw: list(self.history)
         def refresh(*args):
-            self.history.append({'requestId': 'refresh-1', 'status': 'Unknown', 'refreshType': 'ViaApi'})
-            return {'requestId': 'refresh-1'}
+            request_id = f'refresh-{len(self.history) + 1}'
+            self.history.append({'requestId': request_id, 'status': 'Unknown', 'refreshType': 'ViaApi'})
+            return {'requestId': request_id}
         self.client.refresh_dataset.side_effect = refresh
         self.csv = self.root / 'data.csv'
         self.csv.write_text('id,value\n1,a\n2,b\n')
@@ -223,13 +225,67 @@ class AutoRefreshTests(unittest.TestCase):
         self.new_run()
         self.assertEqual(auto.latest_job(self.db)['status'], 'queued')
 
-    def test_status_identifies_models_and_keeps_actual_refresh_completion_time(self):
+    def test_status_uses_time_portal_received_successful_completion(self):
         self.start_refresh()
         self.assertEqual(auto.latest_job(self.db)['datasets'], [{'datasetId': 'dataset', 'completedAt': None}])
         self.history[-1]['endTime'] = '2026-09-23T09:12:00Z'
+        confirmed_at = datetime.fromtimestamp(self.now + 31, timezone.utc).isoformat(timespec='microseconds').replace('+00:00', 'Z')
         self.finish_refresh()
         self.assertEqual(auto.latest_job(self.db)['datasets'], [
-            {'datasetId': 'dataset', 'completedAt': '2026-09-23T09:12:00Z'}])
+            {'datasetId': 'dataset', 'completedAt': confirmed_at}])
+        self.assertEqual(auto.successful_refreshes(self.db, 'workspace')['dataset']['endTime'], confirmed_at)
+
+    def test_failed_attempt_preserves_success_across_restart_and_models(self):
+        self.start_refresh(); self.finish_refresh()
+        previous = auto.successful_refreshes(self.db, 'workspace')
+        self.manual()
+        for _ in range(4): self.step()
+        self.history[-1]['endTime'] = '2030-01-01T00:00:00Z'
+        self.finish_refresh('Failed')
+        initialize_database(self.db)
+        self.assertEqual(auto.successful_refreshes(self.db, 'workspace'), previous)
+        self.assertEqual(auto.latest_job(self.db)['datasets'][0]['completedAt'], None)
+        self.assertEqual(auto.successful_refreshes(self.db, 'another-workspace'), {})
+        self.client.list_reports.return_value.append({'id': 'r3', 'name': 'Third report', 'datasetId': 'another-model'})
+        self.manual('another-model')
+        for _ in range(4): self.step()
+        self.finish_refresh()
+        successes = auto.successful_refreshes(self.db, 'workspace')
+        self.assertEqual(successes['dataset'], previous['dataset'])
+        self.assertIn('another-model', successes)
+
+    def test_failed_first_attempt_has_no_last_success(self):
+        self.start_refresh(); self.finish_refresh('Failed')
+        self.assertEqual(auto.successful_refreshes(self.db, 'workspace'), {})
+
+    def test_confirmation_is_saved_before_restoration_even_without_api_end_time(self):
+        self.start_refresh()
+        self.history[-1]['status'] = 'Completed'
+        self.step()
+        previous = auto.successful_refreshes(self.db, 'workspace')
+        self.assertIn('dataset', previous)
+        self.assertEqual(self.sku, 'F16')
+        self.step()
+        self.fabric.resize.side_effect = RuntimeError('Azure unavailable')
+        self.step()
+        initialize_database(self.db)
+        self.assertEqual(auto.successful_refreshes(self.db, 'workspace'), previous)
+
+    def test_success_timestamp_migration_ignores_newer_failed_attempt(self):
+        self.start_refresh(); self.finish_refresh()
+        with connect_database(self.db) as conn:
+            row = conn.execute('SELECT id,value FROM powerbi_refresh_jobs').fetchone()
+            value = json.loads(row['value'])
+            value['targets'][0].pop('confirmedAt')
+            value['targets'][0]['completedAt'] = '2026-09-23T09:12:00Z'
+            conn.execute('UPDATE powerbi_refresh_jobs SET value=? WHERE id=?', (json.dumps(value), row['id']))
+            value['targets'][0].update(state='failed', completedAt='2026-09-24T09:12:00Z')
+            conn.execute("INSERT INTO powerbi_refresh_jobs (status,value,updated_at) VALUES ('failed',?,?)", (json.dumps(value), self.now))
+            conn.execute('DROP TABLE powerbi_refresh_successes')
+        initialize_database(self.db)
+        self.assertEqual(auto.successful_refreshes(self.db, 'workspace'), {
+            'dataset': {'status': 'Completed', 'endTime': '2026-09-23T09:12:00.000000Z'}})
+        self.assertIsNone(auto.latest_job(self.db)['datasets'][0]['completedAt'])
 
     def test_failure_restores_and_remains_pending(self):
         self.start_refresh()
@@ -408,6 +464,34 @@ class AutoRefreshAPITests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/powerbi/auto-refresh').json['capacityResourceId'], RESOURCE)
         for payload in [[], {'reportIds': 'bad'}, {'reportIds': ['r1'], 'capacityResourceId': 'https://evil.test'}]:
             self.assertEqual(self.client.put('/api/powerbi/auto-refresh', json=payload).status_code, 400)
+
+    def test_report_and_embed_metadata_use_saved_success_not_latest_attempt(self):
+        self.login()
+        db_path = self.root / 'portal.db'
+        with connect_database(db_path) as conn:
+            conn.execute('INSERT INTO powerbi_refresh_successes VALUES (?,?,?)',
+                         ('workspace', 'dataset', '2026-09-23T09:12:00.000000Z'))
+        reports = [{'id': 'r1', 'name': 'Fieldwork', 'datasetId': 'dataset'},
+                   {'id': 'r2', 'name': 'Never completed', 'datasetId': 'new-dataset'}]
+        selection = {'id': 1, 'report_id': 'r1', 'report_name': 'Fieldwork', 'dataset_id': 'dataset',
+                     'selected_at': 'now', 'embed_url': 'https://example.test'}
+        with patch('backend.app.PowerBIConfig.from_env', return_value=SimpleNamespace(workspace_id='workspace')), patch(
+                'backend.app.PowerBIClient') as factory, patch(
+                'backend.app.fetch_powerbi_report_selections', return_value=[selection]):
+            client = factory.return_value
+            client.list_reports.return_value = reports
+            client.get_dataset.return_value = {}
+            client.get_refresh_history.return_value = [{'status': 'Failed', 'endTime': '2026-09-24T09:12:00Z'}]
+            client.build_embed_config.return_value = {'reportId': 'r1', 'datasetId': 'dataset'}
+            report_response = self.client.get('/api/powerbi/reports')
+            embed_response = self.client.get('/api/powerbi/embed-configs')
+            self.assertEqual(report_response.status_code, 200)
+            self.assertEqual(embed_response.status_code, 200)
+            for response in (report_response, embed_response):
+                self.assertEqual(response.json['reports'][0]['latestRefresh'],
+                                 {'status': 'Completed', 'endTime': '2026-09-23T09:12:00.000000Z'})
+            self.assertIsNone(report_response.json['reports'][1]['latestRefresh'])
+            client.get_refresh_history.assert_not_called()
 
     def test_status_hides_models_that_are_not_available_to_the_user(self):
         self.login()
