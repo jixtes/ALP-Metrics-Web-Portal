@@ -489,6 +489,9 @@ function App() {
   const [autoRefreshSettings, setAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const [savedAutoRefreshSettings, setSavedAutoRefreshSettings] = useState({ reportIds: [], capacityResourceId: "" });
   const isUpdating = isRunning || runningPipelineRuns.length > 0 || Boolean(autoRefreshJob?.active);
+  const refreshStatusMessage = autoRefreshJob?.active
+    ? `Refreshing ${autoRefreshJob.dashboards?.join(", ") || "dashboards"}…`
+    : autoRefreshJob?.message;
   const [pipelineStatus, setPipelineStatus] = useState(null);
   const [pipelineOutput, setPipelineOutput] = useState("");
   const [pipelineError, setPipelineError] = useState("");
@@ -2342,7 +2345,7 @@ function App() {
         ) : null}
         {autoRefreshJob?.trigger === "manual" && activeSettingsSection === "powerbi" ? (
           <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
-            {autoRefreshJob.active ? "Refreshing…" : autoRefreshJob.message}
+            {refreshStatusMessage}
             {autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
           </section>
         ) : null}
@@ -3312,7 +3315,7 @@ function App() {
       </section>
 
       {autoRefreshJob ? <section className={`alert-card${autoRefreshJob.status === "completed" ? " alert-card-success" : ""}`} role="status">
-        {autoRefreshJob.message}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
+        {refreshStatusMessage}{autoRefreshJob.error ? ` ${autoRefreshJob.error}` : ""}
       </section> : null}
       {error ? <section className="alert-card">{error}</section> : null}
       {powerBIError && !embeddedReports.length ? <section className="alert-card">{powerBIError}</section> : null}
