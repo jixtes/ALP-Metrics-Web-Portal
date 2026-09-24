@@ -20,6 +20,24 @@ def validate_resource_id(value: str) -> str:
     return value
 
 
+class FabricAPIError(RuntimeError):
+    def __init__(self, response):
+        self.status_code = response.status_code
+        try:
+            payload = response.json()
+            detail = payload.get("error", {}) if isinstance(payload, dict) else {}
+        except ValueError:
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        self.code = str(detail.get("code") or "RequestFailed")
+        messages = [str(detail.get("message") or response.reason or "Azure request failed")]
+        for item in (detail.get("details") or [])[:3]:
+            if isinstance(item, dict) and item.get("message"):
+                messages.append(str(item["message"]))
+        super().__init__(f"Azure Fabric {self.code} (HTTP {self.status_code}): " + " ".join(messages)[:1500])
+
+
 class FabricClient:
     def __init__(self, resource_id: str):
         self.resource_id = validate_resource_id(resource_id)
@@ -41,7 +59,8 @@ class FabricClient:
         response = requests.request(method, "https://management.azure.com" + self.resource_id,
                                     params={"api-version": "2023-11-01"},
                                     headers={"Authorization": f"Bearer {self.token}"}, timeout=60, **kwargs)
-        response.raise_for_status()
+        if not response.ok:
+            raise FabricAPIError(response)
         return response
 
     def get(self) -> dict:

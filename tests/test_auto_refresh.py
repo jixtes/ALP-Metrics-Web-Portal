@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from backend import auto_refresh as auto
 from backend.database import (initialize_database, insert_pipeline_run, complete_pipeline_run,
                               connect_database, PipelineAlreadyRunning, fetch_powerbi_report_selections)
-from powerbi.fabric import FabricClient, validate_resource_id
+from powerbi.fabric import FabricAPIError, FabricClient, validate_resource_id
 
 RESOURCE = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/test/providers/Microsoft.Fabric/capacities/testcapacity'
 
@@ -385,6 +385,79 @@ class AutoRefreshTests(unittest.TestCase):
         initialize_database(self.db)
         self.step()
         self.assertEqual(self.sku, 'F32')
+
+    def test_scale_rejection_surfaces_azure_error_and_verifies_f2_without_waiting(self):
+        self.new_run(); self.step()
+        response = Mock(status_code=400, reason='Bad Request')
+        response.json.return_value = {'error': {'code': 'QuotaExceeded', 'message': 'Requested 32 CUs exceeds quota.'}}
+        self.fabric.resize.side_effect = FabricAPIError(response)
+        self.step()
+        job = auto.latest_job(self.db)
+        self.assertEqual(job['status'], 'restoring')
+        self.assertIn('QuotaExceeded', job['error'])
+        self.assertIn('Requested 32 CUs', job['error'])
+        self.step()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
+        self.assertEqual(self.sku, 'F2')
+        self.client.refresh_dataset.assert_not_called()
+        self.fabric.resize.assert_called_once_with('F32')
+
+    def test_transient_azure_scale_error_retries_and_can_complete(self):
+        self.new_run(); self.step()
+        response = Mock(status_code=503, reason='Service Unavailable')
+        response.json.return_value = {'error': {'code': 'ServiceUnavailable', 'message': 'Try again later.'}}
+        self.fabric.resize.side_effect = FabricAPIError(response)
+        self.step()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'scaling_up')
+        self.fabric.resize.side_effect = lambda sku: setattr(self, 'sku', sku)
+        for _ in range(3): self.step()
+        self.finish_refresh()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'completed')
+        self.assertEqual(auto.latest_job(self.db)['error'], '')
+        self.assertEqual(self.sku, 'F2')
+
+    def test_scale_timeout_preserves_previous_error_after_restart(self):
+        self.new_run(); self.step()
+        self.fabric.resize.side_effect = RuntimeError('Azure rejected the scale request')
+        self.step()
+        initialize_database(self.db)
+        self.now += 901
+        self.step()
+        self.assertIn('Azure rejected the scale request', auto.latest_job(self.db)['error'])
+        self.assertIn('Timed out while scaling to F32', auto.latest_job(self.db)['error'])
+        self.step()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
+        self.client.refresh_dataset.assert_not_called()
+
+    def test_scale_timeout_includes_observed_state_if_no_http_error(self):
+        self.new_run(); self.step()
+        self.fabric.get.return_value = None
+        self.fabric.get.side_effect = lambda: {'sku': {'name': 'F2'}, 'properties': {'state': 'Scaling', 'provisioningState': 'Updating'}}
+        self.now += 901
+        self.step()
+        self.assertIn('Scaling', auto.latest_job(self.db)['error'])
+        self.assertIn('Updating', auto.latest_job(self.db)['error'])
+        self.fabric.resize.assert_not_called()
+        self.client.refresh_dataset.assert_not_called()
+
+    def test_fabric_client_preserves_azure_error_details_without_dumping_response(self):
+        client = FabricClient(RESOURCE)
+        client.token = 'test-token'
+        client.expires = self.now + 10000
+        response = Mock(ok=False, status_code=403, reason='Forbidden')
+        response.json.return_value = {'error': {'code': 'AuthorizationFailed', 'message': 'Capacity write denied.',
+                                               'details': [{'message': 'Missing write permission.'}]}, 'unrelated': 'not shown'}
+        with patch('powerbi.fabric.requests.request', return_value=response):
+            with self.assertRaises(FabricAPIError) as caught:
+                client.resize('F32')
+        self.assertIn('AuthorizationFailed', str(caught.exception))
+        self.assertIn('Missing write permission', str(caught.exception))
+        self.assertNotIn('test-token', str(caught.exception))
+        self.assertNotIn('not shown', str(caught.exception))
+        response.json.side_effect = ValueError('not JSON')
+        with patch('powerbi.fabric.requests.request', return_value=response):
+            with self.assertRaisesRegex(FabricAPIError, 'HTTP 403.*Forbidden'):
+                client.resize('F32')
 
     def test_new_boost_target_is_persisted_before_azure_patch(self):
         self.new_run(); self.step()

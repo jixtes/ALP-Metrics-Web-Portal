@@ -13,7 +13,7 @@ import time
 
 from .database import connect_database
 from powerbi.client import PowerBIClient, PowerBIConfig
-from powerbi.fabric import FabricClient, validate_resource_id
+from powerbi.fabric import FabricAPIError, FabricClient, validate_resource_id
 
 REFRESH_SKU = "F32"
 
@@ -362,6 +362,8 @@ def advance_job(db, job, *, fabric=None, client=None):
             target = boost_sku if job["status"] == "scaling_up" else "F2"
             cap = fabric.get()
             sku = cap.get("sku", {}).get("name")
+            value["lastCapacityState"] = {"sku": sku, "state": cap.get("properties", {}).get("state"),
+                                          "provisioningState": cap.get("properties", {}).get("provisioningState")}
             ready = cap.get("properties", {}).get("state") == "Active" and cap.get("properties", {}).get("provisioningState") == "Succeeded"
             if sku == target and ready:
                 if job["status"] == "scaling_up":
@@ -380,7 +382,8 @@ def advance_job(db, job, *, fabric=None, client=None):
                                      (job["status"], json.dumps(value), time.time(), job["id"]))
                 return
             if job["status"] == "scaling_up" and time.time() - value["stageStarted"] > 900:
-                _restore(db, job, value, f"Timed out while scaling to {boost_sku}.")
+                detail = value.get("lastScaleError") or "Last capacity state: " + json.dumps(value["lastCapacityState"])
+                _restore(db, job, value, f"Timed out while scaling to {boost_sku}. {detail}")
                 return
             if sku not in {"F2", boost_sku}:
                 raise RuntimeError(f"Capacity size changed outside this refresh. Waiting for F2 or {boost_sku} before continuing.")
@@ -434,6 +437,14 @@ def advance_job(db, job, *, fabric=None, client=None):
             _restore(db, job, value)
     except Exception as exc:
         value["retryAt"] = time.time() + 30
+        if job["status"] == "scaling_up":
+            value["lastScaleError"] = str(exc)
+            # An invalid request, denied permission, or missing resource will not
+            # recover by retrying the same scale-up for fifteen minutes. Still
+            # verify/restore F2 before releasing the job's capacity reservation.
+            if isinstance(exc, FabricAPIError) and exc.status_code in {400, 401, 403, 404, 422}:
+                _restore(db, job, value, "Unable to scale Fabric capacity: " + str(exc))
+                return
         if job["status"] == "queued":
             value["message"] = "Dashboard refresh could not start."
             value["error"] = str(exc)

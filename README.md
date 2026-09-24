@@ -325,7 +325,12 @@ running and inspect any prolonged pending status. If the capacity is changed to 
 size other than F2/F32 externally, the worker waits rather than overwriting it.
 
 The portal app needs Azure resource permissions on the capacity as well as Power BI
-workspace/model access. Capacity resizing affects all workspaces on that capacity.
+workspace/model access. The subscription's Fabric quota in the capacity region must
+also permit F32 (at least 32 CUs total, plus any other capacities in that region).
+Azure validation and permission rejections are shown with their error code and
+message, and the worker verifies F2 before releasing the job. Transient errors
+still retry; if scaling times out, the last Azure error or observed capacity state
+is retained in the failure message. Capacity resizing affects all workspaces on that capacity.
 Fabric background usage smoothing can still cause throttling after returning to F2.
 The boost target is saved before scaling. Jobs already in progress on F16 at the
 time of this deployment finish their existing workflow and restore F2; new jobs,
