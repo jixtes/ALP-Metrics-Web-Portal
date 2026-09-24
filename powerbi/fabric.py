@@ -48,6 +48,7 @@ class FabricClient:
         return self._request("GET").json()
 
     def resize(self, sku: str) -> None:
-        if sku not in {"F2", "F16"}:
-            raise ValueError("Only F2 and F16 are supported for automatic refresh.")
+        # F16 is retained solely to resume jobs started before the F32 rollout.
+        if sku not in {"F2", "F16", "F32"}:
+            raise ValueError("Only F2, F16, and F32 are supported for dashboard refresh.")
         self._request("PATCH", json={"sku": {"name": sku, "tier": "Fabric"}})

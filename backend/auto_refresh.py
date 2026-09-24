@@ -15,6 +15,8 @@ from .database import connect_database
 from powerbi.client import PowerBIClient, PowerBIConfig
 from powerbi.fabric import FabricClient, validate_resource_id
 
+REFRESH_SKU = "F32"
+
 TERMINAL = {"completed", "failed", "skipped"}
 REFRESH_TERMINAL = {"Completed", "Failed", "Cancelled", "Canceled", "Disabled"}
 _workers = {}
@@ -169,7 +171,7 @@ def queue_manual_refresh(db, dataset_id, *, client=None, fabric_factory=FabricCl
     value = {"trigger": "manual", "config": config,
              "targets": [{"datasetId": dataset_id, "names": [r["name"] for r in reports], "state": "pending"}],
              "created": time.time(), "stageStarted": time.time(), "ownsCapacity": False,
-             "message": "Dashboard refresh queued; Fabric capacity will scale to F16 and return to F2.",
+             "message": f"Dashboard refresh queued; Fabric capacity will scale to {REFRESH_SKU} and return to F2.",
              "error": "", "retryAt": 0}
     with connect_database(db) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -290,6 +292,9 @@ def advance_job(db, job, *, fabric=None, client=None):
     if time.time() < value.get("retryAt", 0):
         return
     cfg = value["config"]
+    # Jobs already scaling/refreshing before the F32 rollout keep their original
+    # F16 target so a deployment cannot strand their restoration or resize mid-run.
+    boost_sku = value.get("boostSku", "F16")
     try:
         fabric = fabric or FabricClient(cfg["capacityResourceId"])
         client = client or PowerBIClient(PowerBIConfig.from_env())
@@ -346,19 +351,20 @@ def advance_job(db, job, *, fabric=None, client=None):
             if cap.get("sku", {}).get("name") != "F2" or cap.get("properties", {}).get("state") != "Active":
                 raise ValueError("Dashboard refresh requires the capacity to start active on F2.")
             value["ownsCapacity"] = True
+            value["boostSku"] = REFRESH_SKU
             value["boostStarted"] = time.time()
-            value["message"] = "Scaling Fabric capacity to F16."
+            value["message"] = f"Scaling Fabric capacity to {REFRESH_SKU}."
             _save(db, job, value, "scaling_up")
             # The next tick performs PATCH; a restart here resumes the recorded intent.
             return
 
         if job["status"] in {"scaling_up", "restoring"}:
-            target = "F16" if job["status"] == "scaling_up" else "F2"
+            target = boost_sku if job["status"] == "scaling_up" else "F2"
             cap = fabric.get()
             sku = cap.get("sku", {}).get("name")
             ready = cap.get("properties", {}).get("state") == "Active" and cap.get("properties", {}).get("provisioningState") == "Succeeded"
             if sku == target and ready:
-                if target == "F16":
+                if job["status"] == "scaling_up":
                     value["message"] = "Refreshing selected dashboards."
                     _save(db, job, value, "refreshing")
                 else:
@@ -373,11 +379,11 @@ def advance_job(db, job, *, fabric=None, client=None):
                         conn.execute("UPDATE powerbi_refresh_jobs SET status=?,value=?,updated_at=? WHERE id=?",
                                      (job["status"], json.dumps(value), time.time(), job["id"]))
                 return
-            if target == "F16" and time.time() - value["stageStarted"] > 900:
-                _restore(db, job, value, "Timed out while scaling to F16.")
+            if job["status"] == "scaling_up" and time.time() - value["stageStarted"] > 900:
+                _restore(db, job, value, f"Timed out while scaling to {boost_sku}.")
                 return
-            if sku not in {"F2", "F16"}:
-                raise RuntimeError("Capacity size changed outside this refresh. Waiting for F2 or F16 before continuing.")
+            if sku not in {"F2", boost_sku}:
+                raise RuntimeError(f"Capacity size changed outside this refresh. Waiting for F2 or {boost_sku} before continuing.")
             if ready:
                 fabric.resize(target)
             value["retryAt"] = time.time() + 15

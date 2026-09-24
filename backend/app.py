@@ -135,7 +135,7 @@ def create_app(config: dict | None = None) -> Flask:
             job.pop("dashboards", None)
             job.pop("error", None)
             job["message"] = {
-                "queued": "Dashboard refresh queued.", "scaling_up": "Scaling capacity to F16.",
+                "queued": "Dashboard refresh queued.", "scaling_up": "Preparing dashboard refresh.",
                 "refreshing": "Refreshing dashboards.", "restoring": "Restoring capacity to F2.",
                 "completed": "Dashboards refreshed; capacity restored to F2.",
                 "skipped": "No changed data; dashboard refresh skipped.",

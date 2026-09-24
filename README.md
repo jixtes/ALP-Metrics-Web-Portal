@@ -304,7 +304,7 @@ V3 hashes CSVs in its export directory, excluding QC, individual reports and tes
 survey folders. V2 hashes CSVs in successful project `data` folders. Failed/partial
 pipeline runs and skipped/failed uploads never start an automatic refresh.
 
-The worker records its progress in SQLite, scales F2 to F16, waits until active,
+The worker records its progress in SQLite, scales F2 to F32, waits until active,
 refreshes selected semantic models sequentially, then restores and verifies F2.
 Failed models keep their previous fingerprint so the next Update data retries
 even if source data is unchanged. Normal data updates and manual portal refreshes
@@ -322,12 +322,16 @@ F2 even if Power BI cannot confirm completion; unfinished refreshes may fail and
 their data remains pending. Azure/Power BI outages remain visibly pending and retry;
 F2 restoration cannot be guaranteed while Azure is unavailable. Keep the web service
 running and inspect any prolonged pending status. If the capacity is changed to a
-size other than F2/F16 externally, the worker waits rather than overwriting it.
+size other than F2/F32 externally, the worker waits rather than overwriting it.
 
 The portal app needs Azure resource permissions on the capacity as well as Power BI
 workspace/model access. Capacity resizing affects all workspaces on that capacity.
 Fabric background usage smoothing can still cause throttling after returning to F2.
-The Settings **Refresh report** buttons use the same F2 → F16 → refresh → F2
+The boost target is saved before scaling. Jobs already in progress on F16 at the
+time of this deployment finish their existing workflow and restore F2; new jobs,
+including previously queued jobs that have not started scaling, use F32.
+
+The Settings **Refresh report** buttons use the same F2 → F32 → refresh → F2
 workflow, including durable recovery and restoration after failure. Manual refresh
 works without enabling Auto refresh and always runs, even when data is unchanged.
 It requires the same configured capacity resource and permissions. Manual jobs do
