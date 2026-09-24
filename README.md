@@ -49,7 +49,7 @@ SharePoint uploads, database snapshots, then change detection for selected Power
 auto-refresh reports. It never forces a manual Power BI refresh. Existing automatic
 refresh rules, including the initial baseline refresh, remain in effect.
 
-Scheduled runs appear as **Automatic schedule** in the portal. Each scheduled
+Scheduled runs appear as **Auto update** in the portal. Each scheduled
 attempt skips when any normal pipeline update or Power BI refresh/restoration is
 active, or when V3 was triggered in the preceding hour. The one-hour check uses
 **start time**, includes manual and scheduled attempts even if they failed, and

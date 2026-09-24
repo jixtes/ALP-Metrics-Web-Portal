@@ -45,6 +45,13 @@ const uploadColumns = [
 
 let powerBIClientPromise;
 
+function pipelineRunUser(run) {
+  if (!run?.triggered_by_email && ["Automatic schedule", "Automatic update"].includes(run?.triggered_by_name)) {
+    return "Auto update";
+  }
+  return run?.triggered_by_name || run?.triggered_by_email || "N/A";
+}
+
 function successfulRefreshTime(latestRefresh, confirmedAt) {
   const savedAt = latestRefresh?.status === "Completed" ? latestRefresh.endTime : null;
   return confirmedAt && (!savedAt || Date.parse(confirmedAt) > Date.parse(savedAt))
@@ -2865,7 +2872,7 @@ function App() {
                           </strong>
                           <p className="commit-card-meta">
                             Triggered by:{" "}
-                            {settingsPipelineRun.triggered_by_name || settingsPipelineRun.triggered_by_email || "N/A"}
+                            {pipelineRunUser(settingsPipelineRun)}
                           </p>
                         </div>
                       </div>
@@ -3309,7 +3316,7 @@ function App() {
             {isUpdating ? "Updating..." : "Update data"}
           </button>
           <p className="run-meta">
-            Last updated by: {selectedPipelineRun?.triggered_by_name || selectedPipelineRun?.triggered_by_email || "N/A"}
+            Last updated by: {pipelineRunUser(selectedPipelineRun)}
           </p>
           <p className="run-meta">
             Last updated at:{" "}
