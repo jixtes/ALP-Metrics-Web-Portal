@@ -17,8 +17,15 @@ PIPELINE_ROOT = pipeline_root("V3")
 if PIPELINE_ROOT.exists() and str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
-from ..database import complete_pipeline_run, insert_pipeline_run, publish_run_snapshot
+from ..database import (
+    complete_pipeline_run,
+    fetch_pipeline_source_version,
+    insert_pipeline_run,
+    publish_run_snapshot,
+    save_pipeline_source_version,
+)
 from .snapshots import build_snapshot_rows, _now_iso
+from .v3_source_check import surveycto_source_fingerprint
 
 WEB_PORTAL_ROOT = Path(__file__).resolve().parents[2]
 APP_DB_PATH = WEB_PORTAL_ROOT / "instance" / "alp_metrics.db"
@@ -76,6 +83,46 @@ def run_pipeline_and_snapshot(
     with RUN_LOCK:
         run_log = ""
         try:
+            source_version = None
+            check_sources = (
+                extract_mode == "surveycto"
+                and upload_to_sharepoint
+                and publish_snapshot
+            )
+            if check_sources:
+                source_root = Path(pipeline_status.get("root") or PIPELINE_ROOT)
+                source_version = surveycto_source_fingerprint(source_root)
+                previous = fetch_pipeline_source_version(db_path, "V3")
+                commit = pipeline_status.get("commit")
+                unchanged = (
+                    previous is not None
+                    and previous["fingerprint"] == source_version["fingerprint"]
+                    and previous.get("pipeline_commit") == commit
+                    and bool(commit)
+                    and not pipeline_status.get("isDirty")
+                )
+                if unchanged:
+                    checked_sources = len(source_version["sources"])
+                    run_log = f"SurveyCTO preflight checked {checked_sources} V3 sources; no changes detected."
+                    complete_pipeline_run(
+                        db_path,
+                        run_id=run_id,
+                        status="completed",
+                        completed_at=_now_iso(),
+                        message="No SurveyCTO changes; pipeline and uploads skipped.",
+                        pipeline_commit_after=commit,
+                        run_log=run_log,
+                    )
+                    return {
+                        "run_id": run_id,
+                        "status": "completed",
+                        "skipped": True,
+                        "reason": "unchanged_surveycto_data",
+                        "pipeline": pipeline_status,
+                        "log": run_log,
+                        "uploads": [],
+                    }
+
             config = _build_pipeline_config(extract_mode=extract_mode)
             _write_latest_pipeline_log(config.root_dir, "Pipeline execution started.\n")
             run_log = _run_pipeline_with_log_capture(config)
@@ -107,20 +154,38 @@ def run_pipeline_and_snapshot(
                 record_data_update(db_path, run_id, "V3", upload_rows,
                                    exports_root=config.root_dir / config.exports_dir)
 
+            pipeline_after = get_pipeline_repo_status()
+            save_source_version = (
+                source_version is not None
+                and upload_rows
+                and all(row.get("status") == "uploaded" for row in upload_rows)
+                and pipeline_after.get("commit")
+                and not pipeline_after.get("isDirty")
+            )
+
             complete_pipeline_run(
                 db_path,
                 run_id=run_id,
                 status="completed",
                 completed_at=_now_iso(),
                 message=f"Pipeline completed.{upload_message}",
-                pipeline_commit_after=get_pipeline_repo_status().get("commit"),
+                pipeline_commit_after=pipeline_after.get("commit"),
                 run_log=run_log,
             )
+            if save_source_version:
+                save_pipeline_source_version(
+                    db_path,
+                    pipeline_version="V3",
+                    fingerprint=source_version["fingerprint"],
+                    pipeline_commit=pipeline_after["commit"],
+                    run_id=run_id,
+                    updated_at=_now_iso(),
+                )
             return {
                 "run_id": run_id,
                 "status": "completed",
                 "export_path": str(export_path),
-                "pipeline": get_pipeline_repo_status(),
+                "pipeline": pipeline_after,
                 "log": run_log,
                 "uploads": upload_rows,
             }

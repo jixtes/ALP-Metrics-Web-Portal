@@ -101,6 +101,15 @@ def initialize_database(db_path: Path) -> None:
                 project_scope TEXT NOT NULL DEFAULT 'all',
                 allowed_project_refs_json TEXT NOT NULL DEFAULT '[]'
             );
+
+            CREATE TABLE IF NOT EXISTS pipeline_source_versions (
+                pipeline_version TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                pipeline_commit TEXT,
+                run_id INTEGER NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs (id)
+            );
             """
         )
         _ensure_column(connection, "survey_summaries", "blr", "INTEGER")
@@ -228,6 +237,42 @@ def complete_pipeline_run(
         connection.execute(
             "UPDATE pipeline_runs SET row_count = (SELECT COALESCE(SUM(submission_count), 0) FROM survey_summaries WHERE run_id = ?), survey_count = (SELECT COUNT(*) FROM survey_summaries WHERE run_id = ?) WHERE id = ?",
             (run_id, run_id, run_id),
+        )
+        connection.commit()
+
+
+def fetch_pipeline_source_version(db_path: Path, pipeline_version: str) -> dict[str, Any] | None:
+    with connect_database(db_path) as connection:
+        row = connection.execute(
+            "SELECT * FROM pipeline_source_versions WHERE pipeline_version = ?",
+            (pipeline_version,),
+        ).fetchone()
+        return _decode_row(row)
+
+
+def save_pipeline_source_version(
+    db_path: Path,
+    *,
+    pipeline_version: str,
+    fingerprint: str,
+    pipeline_commit: str | None,
+    run_id: int,
+    updated_at: str,
+) -> None:
+    """Record a source version only after its outputs have been published successfully."""
+    with connect_database(db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO pipeline_source_versions (
+                pipeline_version, fingerprint, pipeline_commit, run_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(pipeline_version) DO UPDATE SET
+                fingerprint = excluded.fingerprint,
+                pipeline_commit = excluded.pipeline_commit,
+                run_id = excluded.run_id,
+                updated_at = excluded.updated_at
+            """,
+            (pipeline_version, fingerprint, pipeline_commit, run_id, updated_at),
         )
         connection.commit()
 
