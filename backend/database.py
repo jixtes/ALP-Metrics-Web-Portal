@@ -372,7 +372,6 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
             """
             SELECT *
             FROM pipeline_runs
-            WHERE status != 'skipped'
             ORDER BY id DESC
             LIMIT 1
             """
@@ -395,11 +394,16 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
         ).fetchall()
 
         latest_runs = {version: _decode_row(connection.execute(
+            "SELECT * FROM pipeline_runs WHERE pipeline_version = ? AND extract_mode != 'surveycto_test' ORDER BY id DESC LIMIT 1",
+            (version,),
+        ).fetchone()) for version in ("V2", "V3")}
+        latest_pipeline_runs = {version: _decode_row(connection.execute(
             "SELECT * FROM pipeline_runs WHERE pipeline_version = ? AND extract_mode != 'surveycto_test' AND status != 'skipped' ORDER BY id DESC LIMIT 1",
             (version,),
         ).fetchone()) for version in ("V2", "V3")}
         return {
             "latest_runs": latest_runs,
+            "latest_pipeline_runs": latest_pipeline_runs,
             "latest_run": _decode_row(latest_run),
             "surveys": [_decode_summary(row) for row in summary_rows],
             "uploads": [_decode_row(row) for row in upload_rows],

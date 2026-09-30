@@ -14,6 +14,7 @@ const DASHBOARD_TABLE_PAGE_SIZE = 10;
 const emptyDashboard = {
   latest_run: null,
   latest_runs: {},
+  latest_pipeline_runs: {},
   surveys: [],
   uploads: [],
 };
@@ -2097,8 +2098,9 @@ function App() {
 
   const selectedPipelineRun = dashboard.latest_runs?.[pipelineVersion] ??
     (dashboard.latest_run?.pipeline_version === pipelineVersion ? dashboard.latest_run : null);
-  const settingsPipelineRun = dashboard.latest_runs?.V3 ??
-    (dashboard.latest_run?.pipeline_version === "V3" ? dashboard.latest_run : null);
+  const settingsPipelineRun = dashboard.latest_pipeline_runs?.V3 ??
+    (dashboard.latest_run?.pipeline_version === "V3" && dashboard.latest_run?.status !== "skipped"
+      ? dashboard.latest_run : null);
   const selectedSurvey = dashboard.surveys.find((survey) => survey.id === selectedSurveyId) ?? null;
   const uniqueProjectCount = new Set(dashboard.surveys.map((survey) => `${survey.pipeline_version}:${survey.project_ref || survey.project_key}`)).size;
   const totalSubmissions = dashboard.surveys.reduce((sum, survey) => sum + survey.submission_count, 0);
@@ -3318,7 +3320,7 @@ function App() {
             Last updated by: {pipelineRunUser(selectedPipelineRun)}
           </p>
           <p className="run-meta">
-            Last updated at:{" "}
+            Last checked at:{" "}
             {selectedPipelineRun?.status === "running"
               ? "In progress"
               : formatDate(selectedPipelineRun?.completed_at)}

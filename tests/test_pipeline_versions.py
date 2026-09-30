@@ -343,8 +343,9 @@ class PipelineAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row["pipeline_version"] for row in response.json["surveys"]], ["V2"])
         self.assertEqual([row["file_name"] for row in response.json["uploads"]], ["project.csv"])
-        for run in response.json["latest_runs"].values():
-            self.assertNotIn("run_log", run)
+        for collection in ("latest_runs", "latest_pipeline_runs"):
+            for run in response.json[collection].values():
+                self.assertNotIn("run_log", run)
         self.assertNotIn("run_log", client.get(f"/api/pipeline/runs/{run_id}").json)
         with self.app.app_context():
             Role.query.filter_by(name="v2-client").first().upload_scope = "none"

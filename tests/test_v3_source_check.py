@@ -121,9 +121,11 @@ class V3PreflightIntegrationTests(unittest.TestCase):
         self.assertEqual(run["status"], "skipped")
         self.assertEqual(run["message"], "No SurveyCTO changes; pipeline and uploads skipped.")
         self.assertIsNone(run["run_log"])
-        visible = fetch_dashboard(self.db)["latest_runs"]["V3"]
-        self.assertEqual(visible["id"], prior_id)
-        self.assertEqual(visible["run_log"], "Previous full pipeline log")
+        dashboard = fetch_dashboard(self.db)
+        self.assertEqual(dashboard["latest_runs"]["V3"]["id"], result["run_id"])
+        visible_pipeline = dashboard["latest_pipeline_runs"]["V3"]
+        self.assertEqual(visible_pipeline["id"], prior_id)
+        self.assertEqual(visible_pipeline["run_log"], "Previous full pipeline log")
 
     def test_database_migrates_an_existing_preflight_log_to_a_silent_skip(self):
         prior_id = self._prior_version()
@@ -148,7 +150,9 @@ class V3PreflightIntegrationTests(unittest.TestCase):
         migrated = fetch_pipeline_run(self.db, legacy_id)
         self.assertEqual(migrated["status"], "skipped")
         self.assertIsNone(migrated["run_log"])
-        self.assertEqual(fetch_dashboard(self.db)["latest_runs"]["V3"]["id"], prior_id)
+        dashboard = fetch_dashboard(self.db)
+        self.assertEqual(dashboard["latest_runs"]["V3"]["id"], legacy_id)
+        self.assertEqual(dashboard["latest_pipeline_runs"]["V3"]["id"], prior_id)
 
     def test_forced_run_ignores_an_unchanged_source_fingerprint(self):
         self._prior_version()

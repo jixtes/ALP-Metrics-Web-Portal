@@ -182,13 +182,18 @@ def create_app(config: dict | None = None) -> Flask:
         latest_run = dashboard_data.get("latest_run")
         if latest_run and latest_run.get("pipeline_commit_after"):
             latest_run.update(get_pipeline_commit_details(latest_run.get("pipeline_commit_after"), latest_run["pipeline_version"]))
-        for version, run in dashboard_data["latest_runs"].items():
-            if run and run.get("pipeline_commit_after"):
-                run.update(get_pipeline_commit_details(run["pipeline_commit_after"], version))
+        for collection in ("latest_runs", "latest_pipeline_runs"):
+            for version, run in dashboard_data[collection].items():
+                if run and run.get("pipeline_commit_after"):
+                    run.update(get_pipeline_commit_details(run["pipeline_commit_after"], version))
         # Legacy V2 logs can contain printed response rows. Only administrators
         # may inspect logs; project-level access exposes aggregate snapshots.
         if preview or not current_user.has_role("admin"):
-            for run in [latest_run, *dashboard_data["latest_runs"].values()]:
+            for run in [
+                latest_run,
+                *dashboard_data["latest_runs"].values(),
+                *dashboard_data["latest_pipeline_runs"].values(),
+            ]:
                 if run:
                     run.pop("run_log", None)
         if preview:
