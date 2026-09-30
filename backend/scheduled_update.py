@@ -78,8 +78,11 @@ def run_scheduled_update(db_path: Path) -> int:
             print(f"Scheduled V3 update did not complete; see portal run {run_id}.", flush=True)
             return 1
         incomplete_uploads = any(item.get("status") != "uploaded" for item in result.get("uploads", []))
-        if run["status"] != "completed" or incomplete_uploads:
+        if run["status"] not in {"completed", "skipped"} or incomplete_uploads:
             print(f"Scheduled V3 update finished with errors; see portal run {run_id}.", flush=True)
             return 1
-        print(f"Completed scheduled V3 update, portal run {run_id}. Eligible Power BI refreshes are handled by the portal worker.", flush=True)
+        if run["status"] == "skipped":
+            print(f"Skipped scheduled V3 update, portal run {run_id}: SurveyCTO data is unchanged.", flush=True)
+        else:
+            print(f"Completed scheduled V3 update, portal run {run_id}. Eligible Power BI refreshes are handled by the portal worker.", flush=True)
         return 0

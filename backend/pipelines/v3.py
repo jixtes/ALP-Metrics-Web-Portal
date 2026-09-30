@@ -58,6 +58,7 @@ def run_pipeline_and_snapshot(
     *,
     run_id: int | None = None,
     extract_mode: str = "surveycto",
+    force_run: bool = False,
     upload_to_sharepoint: bool = False,
     publish_snapshot: bool = True,
     sharepoint_folder: str | None = None,
@@ -95,31 +96,30 @@ def run_pipeline_and_snapshot(
                 previous = fetch_pipeline_source_version(db_path, "V3")
                 commit = pipeline_status.get("commit")
                 unchanged = (
-                    previous is not None
+                    not force_run
+                    and previous is not None
                     and previous["fingerprint"] == source_version["fingerprint"]
                     and previous.get("pipeline_commit") == commit
                     and bool(commit)
                     and not pipeline_status.get("isDirty")
                 )
                 if unchanged:
-                    checked_sources = len(source_version["sources"])
-                    run_log = f"SurveyCTO preflight checked {checked_sources} V3 sources; no changes detected."
                     complete_pipeline_run(
                         db_path,
                         run_id=run_id,
-                        status="completed",
+                        status="skipped",
                         completed_at=_now_iso(),
                         message="No SurveyCTO changes; pipeline and uploads skipped.",
                         pipeline_commit_after=commit,
-                        run_log=run_log,
+                        run_log=None,
                     )
                     return {
                         "run_id": run_id,
-                        "status": "completed",
+                        "status": "skipped",
                         "skipped": True,
                         "reason": "unchanged_surveycto_data",
                         "pipeline": pipeline_status,
-                        "log": run_log,
+                        "log": "",
                         "uploads": [],
                     }
 

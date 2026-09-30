@@ -258,6 +258,7 @@ class PipelineAPITests(unittest.TestCase):
                 kwargs = thread.call_args.kwargs["kwargs"]
                 self.assertEqual(kwargs["pipeline_version"], version)
                 self.assertEqual(kwargs["extract_mode"], "surveycto" if version == "V3" else "configured")
+                self.assertFalse(kwargs["force_run"])
                 repo.assert_called_with(version)
                 run = self.client.get(f"/api/pipeline/runs/{response.json['run_id']}").json
                 self.assertEqual(run["pipeline_version"], version)
@@ -266,6 +267,22 @@ class PipelineAPITests(unittest.TestCase):
             response = self.client.post("/api/pipeline/run", json={"pipelineVersion": "V1"})
             self.assertEqual(response.status_code, 400)
             self.assertEqual(thread.call_count, 2)
+
+    def test_settings_can_request_a_forced_full_v3_run(self):
+        with patch("backend.app.Thread") as thread, patch("backend.app.get_pipeline_repo_status", return_value={}):
+            response = self.client.post("/api/pipeline/run", json={"pipelineVersion": "V3", "forceRun": True})
+            self.assertEqual(response.status_code, 202)
+            self.assertTrue(thread.call_args.kwargs["kwargs"]["force_run"])
+            complete_pipeline_run(self.root / "portal.db", run_id=response.json["run_id"], status="completed",
+                                  completed_at="2026-09-22", message="Done")
+            self.assertEqual(
+                self.client.post("/api/pipeline/run", json={"pipelineVersion": "V2", "forceRun": True}).status_code,
+                400,
+            )
+            self.assertEqual(
+                self.client.post("/api/pipeline/run", json={"pipelineVersion": "V3", "forceRun": "yes"}).status_code,
+                400,
+            )
 
     def test_running_update_blocks_both_versions_until_completion(self):
         with patch("backend.app.Thread") as thread, patch("backend.app.get_pipeline_repo_status", return_value={}):

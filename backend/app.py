@@ -59,10 +59,12 @@ def _run_pipeline_background(
     run_id: int,
     extract_mode: str,
     pipeline_version: str = "V3",
+    force_run: bool = False,
     triggered_by_email: str | None,
     triggered_by_name: str | None,
 ) -> None:
     try:
+        runner_options = {"force_run": True} if force_run and pipeline_version == "V3" else {}
         run_pipeline_and_snapshot(
             db_path,
             run_id=run_id,
@@ -71,6 +73,7 @@ def _run_pipeline_background(
             upload_to_sharepoint=True,
             triggered_by_email=triggered_by_email,
             triggered_by_name=triggered_by_name,
+            **runner_options,
         )
     except Exception:
         # run_pipeline_and_snapshot records failed runs in the database.
@@ -208,6 +211,13 @@ def create_app(config: dict | None = None) -> Flask:
             version = normalize_pipeline_version(payload.get("pipelineVersion", "V3"))
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
+        force_run = payload.get("forceRun", False)
+        if not isinstance(force_run, bool):
+            return jsonify({"error": "forceRun must be true or false."}), 400
+        if force_run and version != "V3":
+            return jsonify({"error": "A forced full run is available for V3 only."}), 400
+        if force_run and not current_user.has_role("admin"):
+            return jsonify({"error": "A forced full run requires an admin account."}), 403
         extract_mode = "surveycto" if version == "V3" else "configured"
         pipeline_status = get_pipeline_repo_status(version)
         try:
@@ -234,6 +244,7 @@ def create_app(config: dict | None = None) -> Flask:
                 "run_id": run_id,
                 "extract_mode": extract_mode,
                 "pipeline_version": version,
+                "force_run": force_run,
                 "triggered_by_email": getattr(current_user, "email", None),
                 "triggered_by_name": getattr(current_user, "full_name", None),
             },

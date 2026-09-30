@@ -133,6 +133,14 @@ def initialize_database(db_path: Path) -> None:
             _ensure_column(connection, "pipeline_uploads", name, "TEXT")
         _ensure_column(connection, "pipeline_uploads", "is_project_data", "INTEGER NOT NULL DEFAULT 0")
         connection.execute("UPDATE survey_summaries SET project_key = survey_name, source_key = survey_name, instance_key = survey_name WHERE pipeline_version = 'V3' AND project_key = ''")
+        # Early source-preflight releases stored unchanged checks as completed
+        # runs with a synthetic log. Keep those audit rows, but prevent them
+        # from replacing the latest real pipeline run shown in Settings.
+        connection.execute(
+            """UPDATE pipeline_runs SET status='skipped', run_log=NULL
+               WHERE pipeline_version='V3' AND status='completed'
+               AND message='No SurveyCTO changes; pipeline and uploads skipped.'"""
+        )
         connection.execute("DELETE FROM survey_records")
         connection.commit()
 
@@ -364,6 +372,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
             """
             SELECT *
             FROM pipeline_runs
+            WHERE status != 'skipped'
             ORDER BY id DESC
             LIMIT 1
             """
@@ -386,7 +395,7 @@ def fetch_dashboard(db_path: Path) -> dict[str, Any]:
         ).fetchall()
 
         latest_runs = {version: _decode_row(connection.execute(
-            "SELECT * FROM pipeline_runs WHERE pipeline_version = ? AND extract_mode != 'surveycto_test' ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM pipeline_runs WHERE pipeline_version = ? AND extract_mode != 'surveycto_test' AND status != 'skipped' ORDER BY id DESC LIMIT 1",
             (version,),
         ).fetchone()) for version in ("V2", "V3")}
         return {

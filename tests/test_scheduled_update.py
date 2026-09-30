@@ -63,6 +63,19 @@ class ScheduledUpdateTests(unittest.TestCase):
             run.assert_not_called()
         self.assertIn('last hour', self.output.getvalue())
 
+    def test_unchanged_surveycto_data_is_a_successful_scheduled_skip(self):
+        def skip(db, **kwargs):
+            complete_pipeline_run(db, run_id=kwargs['run_id'], status='skipped',
+                                  completed_at='now', message='No changes', run_log=None)
+            return {'status': 'skipped', 'skipped': True, 'uploads': []}
+
+        with patch('backend.scheduled_update.run_pipeline_and_snapshot', side_effect=skip):
+            self.assertEqual(scheduled.run_scheduled_update(self.db), 0)
+        run = fetch_pipeline_run(self.db, 1)
+        self.assertEqual(run['status'], 'skipped')
+        self.assertIsNone(run['run_log'])
+        self.assertIn('SurveyCTO data is unchanged', self.output.getvalue())
+
     def test_recent_manual_trigger_skips_even_if_it_failed(self):
         for status in ('completed', 'failed'):
             with self.subTest(status=status), connect_database(self.db) as conn:

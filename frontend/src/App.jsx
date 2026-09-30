@@ -1299,7 +1299,7 @@ function App() {
     });
   }
 
-  async function handleRunPipeline(version = pipelineVersion) {
+  async function handleRunPipeline(version = pipelineVersion, forceRun = false) {
     if (isUpdating || runRequestRef.current) return;
     runRequestRef.current = true;
     setIsRunning(true);
@@ -1308,7 +1308,7 @@ function App() {
     try {
       const runData = await apiRequest("/api/pipeline/run", {
         method: "POST",
-        body: { pipelineVersion: version },
+        body: { pipelineVersion: version, forceRun },
       });
       const run = {id: runData.run_id, status: runData.status || "running", pipeline_version: version,
         message: runData.message, triggered_by_name: authUser.fullName, triggered_by_email: authUser.email};
@@ -2829,7 +2829,7 @@ function App() {
                     <button type="button" className="secondary-button" onClick={handleRefreshPipelineStatus} disabled={isPipelineStatusLoading}>
                       {isPipelineStatusLoading ? "Refreshing..." : "Refresh status"}
                     </button>
-                    <button type="button" className="secondary-button" onClick={() => handleRunPipeline("V3")} disabled={isUpdating || isPullingPipeline}>
+                    <button type="button" className="secondary-button" onClick={() => handleRunPipeline("V3", true)} disabled={isUpdating || isPullingPipeline}>
                       {isUpdating ? "Update in progress..." : "Run V3 now"}
                     </button>
                   </div>

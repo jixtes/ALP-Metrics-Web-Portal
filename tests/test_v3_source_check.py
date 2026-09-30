@@ -8,6 +8,7 @@ import pandas as pd
 
 from backend.database import (
     complete_pipeline_run,
+    fetch_dashboard,
     fetch_pipeline_run,
     fetch_pipeline_source_version,
     initialize_database,
@@ -86,6 +87,7 @@ class V3PreflightIntegrationTests(unittest.TestCase):
             status="completed",
             completed_at="2026-09-28T10:01:00+00:00",
             message="Done",
+            run_log="Previous full pipeline log",
         )
         save_pipeline_source_version(
             self.db,
@@ -95,9 +97,10 @@ class V3PreflightIntegrationTests(unittest.TestCase):
             run_id=run_id,
             updated_at="2026-09-28T10:01:00+00:00",
         )
+        return run_id
 
     def test_unchanged_source_skips_pipeline_upload_snapshot_and_refresh(self):
-        self._prior_version()
+        prior_id = self._prior_version()
         source = {"fingerprint": "same", "sources": [{}, {}, {}]}
         with (
             patch.object(v3, "get_pipeline_repo_status", return_value=self.repo),
@@ -115,8 +118,67 @@ class V3PreflightIntegrationTests(unittest.TestCase):
         build.assert_not_called()
         upload.assert_not_called()
         run = fetch_pipeline_run(self.db, result["run_id"])
-        self.assertEqual(run["status"], "completed")
+        self.assertEqual(run["status"], "skipped")
         self.assertEqual(run["message"], "No SurveyCTO changes; pipeline and uploads skipped.")
+        self.assertIsNone(run["run_log"])
+        visible = fetch_dashboard(self.db)["latest_runs"]["V3"]
+        self.assertEqual(visible["id"], prior_id)
+        self.assertEqual(visible["run_log"], "Previous full pipeline log")
+
+    def test_database_migrates_an_existing_preflight_log_to_a_silent_skip(self):
+        prior_id = self._prior_version()
+        legacy_id = insert_pipeline_run(
+            self.db,
+            status="running",
+            extract_mode="surveycto",
+            started_at="2026-09-28T11:00:00+00:00",
+            triggered_by_email=None,
+            triggered_by_name="Automatic schedule",
+            pipeline_version="V3",
+        )
+        complete_pipeline_run(
+            self.db,
+            run_id=legacy_id,
+            status="completed",
+            completed_at="2026-09-28T11:01:00+00:00",
+            message="No SurveyCTO changes; pipeline and uploads skipped.",
+            run_log="SurveyCTO preflight checked 3 V3 sources; no changes detected.",
+        )
+        initialize_database(self.db)
+        migrated = fetch_pipeline_run(self.db, legacy_id)
+        self.assertEqual(migrated["status"], "skipped")
+        self.assertIsNone(migrated["run_log"])
+        self.assertEqual(fetch_dashboard(self.db)["latest_runs"]["V3"]["id"], prior_id)
+
+    def test_forced_run_ignores_an_unchanged_source_fingerprint(self):
+        self._prior_version()
+        export = self.root / "final.csv"
+        pd.DataFrame([{"project": "Project", "SubmissionDate": "2026-09-28"}]).to_csv(export, index=False)
+        config = SimpleNamespace(
+            root_dir=self.root,
+            processed_csv_path="final.csv",
+            labeled_csv_path="labelled.csv",
+            exports_dir="files/pipeline",
+        )
+        with (
+            patch.object(v3, "get_pipeline_repo_status", return_value=self.repo),
+            patch.object(v3, "surveycto_source_fingerprint", return_value={
+                "fingerprint": "same", "sources": [{}, {}, {}],
+            }) as source_check,
+            patch.object(v3, "_build_pipeline_config", return_value=config),
+            patch.object(v3, "_run_pipeline_with_log_capture", return_value="Forced pipeline log") as run,
+            patch.object(v3, "_upload_export_files", return_value=[]),
+        ):
+            result = v3.run_pipeline_and_snapshot(
+                self.db,
+                force_run=True,
+                upload_to_sharepoint=True,
+                publish_snapshot=True,
+            )
+        source_check.assert_called_once()
+        run.assert_called_once()
+        self.assertEqual(result["status"], "completed")
+        self.assertNotIn("skipped", result)
 
     def test_successful_publish_saves_source_version_for_the_next_run(self):
         export = self.root / "final.csv"
