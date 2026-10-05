@@ -146,13 +146,13 @@ are committed together. Each version keeps its own latest-run status and logs.
 
 V2 project grants use version-specific project keys, so a V3 grant does not
 automatically grant access to a similarly named V2 project. Project-file access
-includes only `<project>/<survey>/data/`; the portal links to that SharePoint
-folder and excludes raw/review folders for these users. SharePoint permissions
+includes the final processed CSV and configured project-specific raw CSVs for
+assigned projects. Other raw/review files remain excluded. SharePoint permissions
 must also permit the user to open the link. Uploading does not grant permissions.
 
-The Data files view groups V2 processed files and project-specific raw exports
-into one entry per project, with links to processed SharePoint folders and raw
-CSV files when the upload succeeded. V2 tags are red and V3 tags are green.
+The Data files view shows one entry per V2 project survey, with one direct link
+to its final processed CSV or configured raw project CSV when the upload succeeds.
+V2 tags are red and V3 tags are green.
 QC and individual-report
 folders are hidden from the file list and folder filter.
 

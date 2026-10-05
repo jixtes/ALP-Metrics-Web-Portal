@@ -3654,7 +3654,7 @@ function App() {
               <section className="survey-split-column survey-split-column-list">
                 <div className="section-heading">
                   <h2>Data files</h2>
-                  <p>V2 project folders, including raw survey exports, and V3 files with their upload status.</p>
+                  <p>One data file per V2 project survey, plus V3 files and their upload status.</p>
                 </div>
 
                 <div className="filter-row">
@@ -3734,20 +3734,11 @@ function App() {
                                 </div>
                               </td>
                               <td data-label="Link">
-                                {item.pipeline_version === "V2" ? (
-                                  item.data_folders.length ? item.data_folders.map((folder) => (
-                                    <a key={folder.url} className="sharepoint-link-button" href={folder.url} target="_blank" rel="noreferrer">
-                                      <span className="sharepoint-link-mark" aria-hidden="true" />
-                                      {item.data_folders.length === 1
-                                        ? `Open ${folder.kind}`
-                                        : `Open ${folder.name} ${folder.kind}`}
-                                    </a>
-                                  )) : "N/A"
-                                ) : item.web_url ? (
+                                {item.web_url ? (
                                   <a className="sharepoint-link-button" href={item.web_url} target="_blank" rel="noreferrer">
                                     <span className="sharepoint-link-mark" aria-hidden="true">
                                     </span>
-                                    Open in SharePoint
+                                    {item.pipeline_version === "V2" ? "Open data file" : "Open in SharePoint"}
                                   </a>
                                 ) : (
                                   "N/A"

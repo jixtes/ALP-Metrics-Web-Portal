@@ -1,6 +1,6 @@
 export function groupProjectFiles(uploads) {
   const rows = [];
-  const projects = new Map();
+  const surveys = new Map();
   for (const item of uploads) {
     const folders = (item.sharepoint_path || item.relative_path || item.local_path || "")
       .replaceAll("\\", "/").split("/").slice(0, -1);
@@ -12,37 +12,28 @@ export function groupProjectFiles(uploads) {
       continue;
     }
     const parts = (item.relative_path || "").split("/");
-    const processed = Boolean(item.is_project_data) && parts.length >= 4 && parts[2] === "data";
+    const processed = Boolean(item.is_project_data) && parts.length === 4
+      && parts[2] === "data" && /fullprocesseddatawithlabels?\.csv$/i.test(parts[3]);
     const rawProject = parts.length === 4 && parts[0] === "raw_projects" && parts[3] === "surveycto_data.csv";
     if (!processed && !rawProject) continue;
     const projectName = rawProject ? parts[1] : parts[0];
     const surveyName = rawProject ? parts[2] : parts[1];
     const projectKey = item.project_key || `V2:${projectName}`;
-    let project = projects.get(projectKey);
-    if (!project) {
-      project = {
-        ...item,
-        id: `project:${projectKey}`,
-        file_name: projectName,
-        folder: `V2/${projectName}`,
-        web_url: null,
-        data_folders: [],
-        message: "",
-      };
-      projects.set(projectKey, project);
-      rows.push(project);
-    }
-    const link = rawProject ? item.web_url : item.folder_web_url;
-    if (link && !project.data_folders.some((folder) => folder.url === link)) {
-      project.data_folders.push({ name: surveyName, url: link,
-        kind: rawProject ? "raw file" : "data folder" });
-      project.web_url ||= link;
-    }
-    if (new Date(item.uploaded_at) > new Date(project.uploaded_at || 0)) {
-      project.uploaded_at = item.uploaded_at;
-    }
-    if (item.status === "failed" || (item.status !== "uploaded" && project.status === "uploaded")) {
-      project.status = item.status;
+    const key = JSON.stringify([projectKey, surveyName]);
+    const row = {
+      ...item,
+      id: `survey:${key}`,
+      file_name: `${projectName} · ${surveyName}`,
+      folder: item.folder || (rawProject ? "V2" : `V2/${projectName}/${surveyName}/data`),
+      web_url: item.web_url || null,
+    };
+    const existing = surveys.get(key);
+    if (!existing) {
+      surveys.set(key, { row, rawProject });
+      rows.push(row);
+    } else if (rawProject && !existing.rawProject) {
+      Object.assign(existing.row, row);
+      existing.rawProject = true;
     }
   }
   return rows;
