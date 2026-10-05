@@ -225,6 +225,38 @@ class AutoRefreshTests(unittest.TestCase):
         self.new_run()
         self.assertEqual(auto.latest_job(self.db)['status'], 'queued')
 
+    def test_v2_raw_project_change_queues_refresh_but_live_form_change_does_not(self):
+        raw_csv = self.root / 'raw.csv'
+        raw_csv.write_text('id,value\n1,raw\n')
+        live_csv = self.root / 'live.csv'
+        live_csv.write_text('id,value\n1,live\n')
+        uploads = [
+            {'local_path': str(self.csv), 'status': 'uploaded', 'is_project_data': True,
+             'relative_path': 'Project/Survey/data/final.csv'},
+            {'local_path': str(raw_csv), 'status': 'uploaded', 'is_project_data': False,
+             'relative_path': 'raw_projects/Project/Survey/surveycto_data.csv'},
+            {'local_path': str(live_csv), 'status': 'uploaded', 'is_project_data': False,
+             'relative_path': 'live_forms/alp_retailer_survey.csv'},
+        ]
+
+        def run_v2():
+            run_id = insert_pipeline_run(self.db, status='running', extract_mode='configured',
+                                         started_at='now', triggered_by_email=None,
+                                         triggered_by_name=None, pipeline_version='V2')
+            auto.record_data_update(self.db, run_id, 'V2', uploads)
+            complete_pipeline_run(self.db, run_id=run_id, status='completed', completed_at='now', message='done')
+
+        run_v2()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'queued')
+        for _ in range(4): self.step()
+        self.finish_refresh()
+        live_csv.write_text('id,value\n1,new live\n')
+        run_v2()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'skipped')
+        raw_csv.write_text('id,value\n1,new raw\n')
+        run_v2()
+        self.assertEqual(auto.latest_job(self.db)['status'], 'queued')
+
     def test_status_uses_time_portal_received_successful_completion(self):
         self.start_refresh()
         self.assertEqual(auto.latest_job(self.db)['datasets'], [{'datasetId': 'dataset', 'completedAt': None}])
