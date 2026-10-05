@@ -3654,7 +3654,7 @@ function App() {
               <section className="survey-split-column survey-split-column-list">
                 <div className="section-heading">
                   <h2>Data files</h2>
-                  <p>V2 project data folders and V3 files with their upload status.</p>
+                  <p>V2 project folders, including raw survey exports, and V3 files with their upload status.</p>
                 </div>
 
                 <div className="filter-row">
@@ -3738,7 +3738,9 @@ function App() {
                                   item.data_folders.length ? item.data_folders.map((folder) => (
                                     <a key={folder.url} className="sharepoint-link-button" href={folder.url} target="_blank" rel="noreferrer">
                                       <span className="sharepoint-link-mark" aria-hidden="true" />
-                                      {item.data_folders.length === 1 ? "Open data folder" : `Open ${folder.name} data folder`}
+                                      {item.data_folders.length === 1
+                                        ? `Open ${folder.kind}`
+                                        : `Open ${folder.name} ${folder.kind}`}
                                     </a>
                                   )) : "N/A"
                                 ) : item.web_url ? (

@@ -150,8 +150,10 @@ includes only `<project>/<survey>/data/`; the portal links to that SharePoint
 folder and excludes raw/review folders for these users. SharePoint permissions
 must also permit the user to open the link. Uploading does not grant permissions.
 
-The Data files view groups V2 files into one entry per project with links to its
-data folders. V2 tags are red and V3 tags are green. QC and individual-report
+The Data files view groups V2 processed files and project-specific raw exports
+into one entry per project, with links to processed SharePoint folders and raw
+CSV files when the upload succeeded. V2 tags are red and V3 tags are green.
+QC and individual-report
 folders are hidden from the file list and folder filter.
 
 Settings pipeline status, Git pull controls, and run logs apply to V3 only.
