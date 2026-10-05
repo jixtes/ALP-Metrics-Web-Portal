@@ -162,6 +162,82 @@ class V2IntegrationTests(SnapshotFixture):
         self.assertEqual((rows, files, refreshed), ([], [], []))
         self.assertEqual(len(errors), 2)
 
+    def test_raw_project_exports_create_portal_surveys_without_exposing_raw_project_files(self):
+        relative = "raw_projects/ETG Mozambique Baseline 2025/ALP Retailer Survey/surveycto_data.csv"
+        path = self.root / "output" / relative
+        path.parent.mkdir(parents=True)
+        pd.DataFrame([
+            {"project": "ETG Mozambique Baseline 2025", "SubmissionDate": "2025-01-01",
+             "phase_pl": "Baseline", "country_pl": "Mozambique", "KEY": "old-1"},
+            {"project": "ETG Mozambique Baseline SM 2025", "SubmissionDate": "2025-02-01",
+             "phase_pl": "Baseline", "country_pl": "Mozambique", "KEY": "live-1"},
+            {"project": "ETG Mozambique Baseline 2025", "SubmissionDate": "2025-01-15",
+             "phase_pl": "", "country_pl": "Mozambique", "KEY": "nonconsent-1"},
+        ]).to_csv(path, index=False)
+        entry = {"project_name": "ETG Mozambique Baseline 2025", "form_id": "alp_retailer_survey",
+                 "relative_path": relative, "rows": 3, "status": "exported"}
+        manifest = {"jobs": [], "raw_project_exports": {"status": "completed", "files": [entry]},
+                    "sharepoint": {"status": "completed", "files": [
+                        {"relative_path": relative, "status": "uploaded", "web_url": "https://example/raw",
+                         "folder_web_url": "https://example/raw-folder"}]}}
+        rows, files, refreshed, errors = v2.collect_snapshots(manifest, self.root / "output")
+        self.assertEqual(errors, [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["survey_name"], "ETG Mozambique Baseline 2025")
+        self.assertEqual(rows[0]["submission_count"], 3)
+        self.assertEqual(rows[0]["source_survey"], "ALP Retailer Survey")
+        self.assertEqual(rows[0]["preview"]["source_kind"], "raw")
+        self.assertEqual(rows[0]["preview"]["entity_type_totals"], ["Retailer (3)"])
+        self.assertEqual(len(refreshed), 1)
+        self.assertEqual(len(files), 1)
+        self.assertFalse(files[0]["is_project_data"])
+        run_id = self.run_id("V2")
+        publish_run_snapshot(self.db, run_id=run_id, pipeline_version="V2", survey_rows=rows,
+                             record_rows=[], upload_rows=files, source_keys=refreshed)
+        self.assertEqual(fetch_dashboard(self.db)["surveys"][0]["submission_count"], 3)
+
+    def test_failed_raw_export_preserves_previous_survey(self):
+        entry = {"project_name": "ETG Mozambique Baseline 2025", "form_id": "alp_retailer_survey",
+                 "relative_path": "raw_projects/ETG Mozambique Baseline 2025/ALP Retailer Survey/surveycto_data.csv",
+                 "rows": 2, "status": "failed"}
+        old_key = v2.raw_source_key(entry, "ALP Retailer Survey")
+        self.publish("V2", [survey("ETG Mozambique Baseline 2025", source_key=old_key)], [])
+        manifest = {"jobs": [], "raw_project_exports": {"status": "failed", "files": [entry]}}
+        rows, files, refreshed, errors = v2.collect_snapshots(manifest, self.root / "output")
+        self.assertEqual((rows, files, refreshed), ([], [], []))
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(fetch_dashboard(self.db)["surveys"]), 1)
+
+    def test_v2_update_publishes_raw_export_in_survey_list(self):
+        (self.root / "main.py").write_text('''import argparse, csv, json
+from pathlib import Path
+p=argparse.ArgumentParser()
+p.add_argument('--output'); p.add_argument('--manifest'); p.add_argument('--skip-sharepoint', action='store_true')
+a=p.parse_args()
+out=Path(a.output)
+relative='raw_projects/Soufflet 2 (2024)/ALP Commercial Farmer Survey/surveycto_data.csv'
+path=out/relative
+path.parent.mkdir(parents=True)
+with path.open('w') as f:
+    writer=csv.writer(f)
+    writer.writerow(['project', 'SubmissionDate', 'phase_pl', 'KEY'])
+    writer.writerow(['Soufflet 2 (2024)', '2024-01-01', 'Baseline', 'cf-1'])
+entry={'project_name':'Soufflet 2 (2024)', 'form_id':'alp_commercial_farmer_survey',
+       'relative_path':relative, 'rows':1, 'status':'exported'}
+manifest={'jobs':[], 'raw_project_exports':{'status':'completed','files':[entry]},
+          'sharepoint':{'status':'completed','files':[{'relative_path':relative,'status':'uploaded'}]}}
+Path(a.manifest).write_text(json.dumps(manifest))
+''')
+        with patch.object(v2, "pipeline_root", return_value=self.root), \
+             patch.dict(os.environ, {"ALP_V2_PYTHON": sys.executable}):
+            result = v2.run_pipeline_and_snapshot(self.db)
+        self.assertEqual(result["status"], "completed")
+        surveys = fetch_dashboard(self.db)["surveys"]
+        self.assertEqual(len(surveys), 1)
+        self.assertEqual(surveys[0]["survey_name"], "Soufflet 2 (2024)")
+        self.assertEqual(surveys[0]["source_survey"], "ALP Commercial Farmer Survey")
+        self.assertEqual(surveys[0]["preview"]["source_kind"], "raw")
+
     def test_real_subprocess_runner_publishes_partial_results_and_keeps_other_sources(self):
         failed_job = {"type": "retailer", "project_name": "Other", "survey_name": "Retailer survey"}
         self.publish("V3", [survey("V3 project")], [upload("v3.csv")])

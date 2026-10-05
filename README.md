@@ -128,13 +128,16 @@ compatible environment before running it. Portal Microsoft/SharePoint settings
 are passed to the child process; SurveyCTO settings are read from V2's `.env`
 and the runner's shared parent `.env`.
 
-After V2 finishes, the portal imports each successful job's
-`data/*FullProcessedDataWithLabels.csv`. It stores project, version, source
-survey, phase, client, country, assessor, processed submission counts, date
-ranges, enumerator activity, and entity counts. Multiple phases get separate
-instances. Failed or empty jobs preserve their previous snapshots. Empty sources
-are skipped with an explanation; processing failures alongside successful jobs
-are reported as a partial update. Raw respondent previews remain disabled.
+After V2 finishes, the portal imports each successful processing job's
+`data/*FullProcessedDataWithLabels.csv` and each successful configured
+`raw_project_exports` CSV. Raw exports appear in Survey overview with a
+"Raw export" label; they are not scored outputs or project data files.
+The portal stores project, version, source survey, phase, client, country,
+assessor, submission counts, date ranges, enumerator activity, and entity
+counts. Multiple phases get separate instances. Failed or empty jobs preserve
+their previous snapshots. Empty sources are skipped with an explanation;
+processing failures alongside successful jobs are reported as a partial update.
+Raw respondent previews remain disabled.
 
 Database initialization adds `pipeline_version` to runs, snapshots, and files;
 existing entries become V3. Updates replace only the selected version's data,

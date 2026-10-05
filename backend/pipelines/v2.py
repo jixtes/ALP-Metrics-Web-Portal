@@ -18,6 +18,14 @@ from .repository import RUN_LOCK, pipeline_root, repo_status, commit_details, pu
 from .snapshots import SUMMARY_COLUMNS, build_snapshot_dataframe
 
 ENTITY_TYPES = {"farmer": "Lead farmer", "retailer": "Retailer", "po": "Producer organisation", "sme": "SME"}
+RAW_ENTITY_TYPES = {
+    "alp_commercial_farmer_survey": "Commercial farmer",
+    "alp_lead_farmer_survey": "Lead farmer",
+    "alp_producer_organization_survey": "Producer organisation",
+    "alp_retailer_survey": "Retailer",
+    "alp_retailer_with_fpa_survey": "Retailer",
+    "alp_generic_company_survey": "SME",
+}
 
 
 def get_pipeline_repo_status() -> dict:
@@ -102,6 +110,67 @@ def build_job_snapshot(output_dir: Path, job: dict, folder_url: str | None = Non
     return summaries
 
 
+def raw_source_key(entry: dict, survey_name: str) -> str:
+    return json.dumps(["raw", entry["form_id"], entry["project_name"], survey_name], ensure_ascii=False)
+
+
+def raw_export_path(output_dir: Path, entry: dict) -> tuple[Path, str]:
+    relative = PurePosixPath(entry.get("relative_path") or "")
+    parts = relative.parts
+    if (len(parts) != 4 or parts[0] != "raw_projects" or parts[1] != entry.get("project_name")
+            or not parts[2] or parts[2] in {".", ".."} or parts[3] != "surveycto_data.csv"):
+        raise ValueError("Invalid V2 raw project export path.")
+    path = output_dir.joinpath(*parts)
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(output_dir.resolve()):
+        raise ValueError("V2 raw project export is missing or outside this run's output directory.")
+    return path, parts[2]
+
+
+def build_raw_export_snapshot(path: Path, entry: dict, survey_name: str) -> list[dict]:
+    overview_columns = set(SUMMARY_COLUMNS.values()) | {"ifcproject_pl", "cfid_key", "mfid_key", "rtid_key",
+                                                        "poid_key", "smeid_key", "KEY"}
+    frame = pd.read_csv(path, encoding="utf-8-sig", low_memory=False,
+                        usecols=lambda column: column in overview_columns)
+    required = {"project", "SubmissionDate", "phase_pl"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError("V2 raw export is missing overview fields: " + ", ".join(sorted(missing)))
+    if frame.empty or len(frame.index) != entry.get("rows"):
+        raise ValueError("V2 raw export row count does not match its run manifest.")
+    # SurveyCTO project titles may differ between historical and live sources.
+    frame["project"] = entry["project_name"]
+    # Non-consent rows can have no phase. If this project has one known phase,
+    # include those rows in the same overview entry without changing the CSV.
+    phases = frame["phase_pl"].astype("string").str.strip().replace("", pd.NA)
+    known_phases = phases.dropna().unique()
+    if len(known_phases) == 1:
+        frame["phase_pl"] = phases.fillna(known_phases[0])
+    frame["project_label_pl"] = entry["project_name"]
+    if "ifcproject_pl" not in frame:
+        frame["project_ref_pl"] = entry["project_name"]
+    else:
+        frame["project_ref_pl"] = frame["ifcproject_pl"].fillna(entry["project_name"])
+    if "entity_type_eng_pl" not in frame:
+        frame["entity_type_eng_pl"] = RAW_ENTITY_TYPES.get(entry["form_id"], survey_name)
+    for key in ("cfid_key", "mfid_key", "rtid_key", "poid_key", "smeid_key", "KEY"):
+        if key in frame:
+            frame["id_key"] = frame[key]
+            break
+    summaries = []
+    source = raw_source_key(entry, survey_name)
+    for phase, group in frame.groupby("phase_pl", dropna=False):
+        rows, _ = build_snapshot_dataframe(group)
+        phase_key = "" if pd.isna(phase) else str(phase)
+        for row in rows:
+            row.update(pipeline_version="V2", source_key=source,
+                       instance_key=json.dumps([source, phase_key], ensure_ascii=False),
+                       project_key="V2:" + entry["project_name"], source_survey=survey_name,
+                       data_folder_url=None)
+            row["preview"]["source_kind"] = "raw"
+        summaries.extend(rows)
+    return summaries
+
+
 def collect_snapshots(manifest: dict, output_dir: Path) -> tuple[list, list, list, list]:
     """Only successful jobs replace their old data; failed jobs keep theirs."""
     uploaded = {item.get("relative_path"): item for item in manifest.get("sharepoint", {}).get("files", [])}
@@ -141,6 +210,30 @@ def collect_snapshots(manifest: dict, output_dir: Path) -> tuple[list, list, lis
             files.extend(job_files)
             refreshed.append(source_key(job))
         except (ValueError, OSError, KeyError) as exc:
+            errors.append(f"{name}: {exc}")
+    for entry in manifest.get("raw_project_exports", {}).get("files", []):
+        name = entry.get("project_name", "Raw project")
+        if entry.get("status") != "exported":
+            errors.append(f"{name}: raw export failed; previous snapshot preserved.")
+            continue
+        try:
+            path, survey_name = raw_export_path(output_dir, entry)
+            rows = build_raw_export_snapshot(path, entry, survey_name)
+            relative = path.relative_to(output_dir).as_posix()
+            item = uploaded.get(relative, {})
+            source = raw_source_key(entry, survey_name)
+            summaries.extend(rows)
+            files.append({
+                "file_name": path.name, "local_path": str(path), "relative_path": relative,
+                "sharepoint_path": item.get("sharepoint_path", ""),
+                "status": item.get("status", "skipped"), "uploaded_at": item.get("uploaded_at"),
+                "web_url": item.get("web_url"), "folder_web_url": item.get("folder_web_url"),
+                "message": item.get("message") or manifest.get("sharepoint", {}).get("message", ""),
+                "source_key": source, "project_key": "V2:" + entry["project_name"],
+                "is_project_data": False,
+            })
+            refreshed.append(source)
+        except (ValueError, OSError, KeyError, UnicodeError) as exc:
             errors.append(f"{name}: {exc}")
     return summaries, files, refreshed, errors
 
@@ -206,7 +299,7 @@ def run_pipeline_and_snapshot(db_path: Path, *, run_id: int | None = None,
             if status == "completed" and upload_to_sharepoint:
                 from ..auto_refresh import record_data_update
                 record_data_update(db_path, run_id, "V2", uploads)
-            message = f"V2 updated {len(summaries)} survey snapshots ({sum(r['submission_count'] for r in summaries)} processed records)."
+            message = f"V2 updated {len(summaries)} survey snapshots ({sum(r['submission_count'] for r in summaries)} records)."
             for job in empty_jobs:
                 message += (f" {job['project_name']} / {job['survey_name']}: skipped because the configured source"
                             " has no matching project records; any existing snapshot kept.")
