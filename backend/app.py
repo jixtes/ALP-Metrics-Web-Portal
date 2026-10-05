@@ -169,7 +169,7 @@ def create_app(config: dict | None = None) -> Flask:
         upload_scope = _upload_access(preview)
         if upload_scope == "none":
             dashboard_data["uploads"] = []
-        elif upload_scope == "project_files":
+        elif upload_scope == "project_files" or project_scope == "restricted":
             dashboard_data["uploads"] = _filter_project_file_uploads(
                 dashboard_data["uploads"],
                 dashboard_data["surveys"],
@@ -678,7 +678,9 @@ def _survey_project_access_key(survey: dict) -> str:
 def _is_project_data_upload(upload: dict) -> bool:
     if upload.get("pipeline_version") == "V2":
         parts = str(upload.get("relative_path") or "").split("/")
-        return bool(upload.get("is_project_data")) and len(parts) >= 4 and parts[2] == "data"
+        processed = bool(upload.get("is_project_data")) and len(parts) >= 4 and parts[2] == "data"
+        raw_project = len(parts) == 4 and parts[0] == "raw_projects" and parts[3] == "surveycto_data.csv"
+        return processed or raw_project
     relative_path = f"/{_upload_relative_path(upload).lower().strip('/')}/"
     return f"/{PROJECT_DATA_UPLOAD_FOLDER}/" in relative_path
 

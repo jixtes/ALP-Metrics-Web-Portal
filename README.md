@@ -362,6 +362,10 @@ token checks with `node --test frontend/src/powerbiSession.test.js`.
 Test-survey uploads from the local `files/test_survey` workspace and the
 SharePoint `test_survey` folder are excluded from the portal's general Survey
 data files table. Legacy `local_update` entries remain hidden as well.
+For project-specific roles, the dashboard returns data files only for assigned
+projects. This includes V2 raw project CSVs; V2 live-form downloads and other
+unassigned uploads are excluded. The rule also applies when a role's SharePoint
+uploads access is set to `all`.
 
 ## Running Locally
 

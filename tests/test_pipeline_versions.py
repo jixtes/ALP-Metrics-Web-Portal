@@ -294,15 +294,19 @@ class VersionRoutingTests(unittest.TestCase):
             service.run_pipeline_and_snapshot(Path("test.db"), extract_mode="surveycto_test", publish_snapshot=False)
             self.assertEqual(run.call_args.kwargs["extract_mode"], "surveycto_test")
 
-    def test_project_file_access_does_not_cross_versions_or_expose_raw_data(self):
+    def test_project_file_access_includes_assigned_raw_exports_only(self):
         v2_file = upload(pipeline_version="V2", project_key="V2:Project", relative_path="Project/Survey/data/file.csv", is_project_data=1)
         v2_raw = upload(pipeline_version="V2", project_key="V2:Project", relative_path="Project/Survey/raw/all/raw.csv", is_project_data=0)
+        v2_export = upload("surveycto_data.csv", pipeline_version="V2", project_key="V2:Project",
+                           relative_path="raw_projects/Project/Survey/surveycto_data.csv", is_project_data=0)
+        other_export = upload("surveycto_data.csv", pipeline_version="V2", project_key="V2:Other",
+                              relative_path="raw_projects/Other/Survey/surveycto_data.csv", is_project_data=0)
         v3_file = upload("project.csv", pipeline_version="V3")
         surveys = [survey(project_key="Project", pipeline_version="V3"), survey(project_key="V2:Project", pipeline_version="V2")]
-        files = [v2_file, v2_raw, v3_file]
-        self.assertEqual(_filter_project_file_uploads(files, surveys, "restricted", {"V2:Project"}), [v2_file])
+        files = [v2_file, v2_raw, v2_export, other_export, v3_file]
+        self.assertEqual(_filter_project_file_uploads(files, surveys, "restricted", {"V2:Project"}), [v2_file, v2_export])
         self.assertEqual(_filter_project_file_uploads(files, surveys, "restricted", {"Project"}), [v3_file])
-        self.assertEqual(_filter_project_file_uploads(files, surveys, "all", set()), [v2_file, v3_file])
+        self.assertEqual(_filter_project_file_uploads(files, surveys, "all", set()), [v2_file, v2_export, other_export, v3_file])
 
 
 class PipelineAPITests(unittest.TestCase):
@@ -404,6 +408,10 @@ class PipelineAPITests(unittest.TestCase):
                             relative_path="Project/Survey/data/file.csv", is_project_data=1)]
             if version == "V2":
                 files.append(upload("raw.csv", project_key=project, relative_path="Project/Survey/raw/all/raw.csv"))
+                files.append(upload("surveycto_data.csv", pipeline_version="V2", project_key=project,
+                                    relative_path="raw_projects/Project/Survey/surveycto_data.csv"))
+                files.append(upload("other_project.csv", pipeline_version="V2", project_key="V2:Other",
+                                    relative_path="raw_projects/Other/Survey/surveycto_data.csv"))
             publish_run_snapshot(db_path, run_id=run_id, pipeline_version=version, survey_rows=rows, record_rows=[], upload_rows=files)
             complete_pipeline_run(db_path, run_id=run_id, status="completed", completed_at="2026-09-22", message="Done", run_log="private diagnostic rows")
         with self.app.app_context():
@@ -418,11 +426,16 @@ class PipelineAPITests(unittest.TestCase):
         response = client.get("/api/dashboard")
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row["pipeline_version"] for row in response.json["surveys"]], ["V2"])
-        self.assertEqual([row["file_name"] for row in response.json["uploads"]], ["project.csv"])
+        self.assertEqual([row["file_name"] for row in response.json["uploads"]], ["project.csv", "surveycto_data.csv"])
         for collection in ("latest_runs", "latest_pipeline_runs"):
             for run in response.json[collection].values():
                 self.assertNotIn("run_log", run)
         self.assertNotIn("run_log", client.get(f"/api/pipeline/runs/{run_id}").json)
+        with self.app.app_context():
+            Role.query.filter_by(name="v2-client").first().upload_scope = "all"
+            auth_db.session.commit()
+        response = client.get("/api/dashboard")
+        self.assertEqual([row["file_name"] for row in response.json["uploads"]], ["project.csv", "surveycto_data.csv"])
         with self.app.app_context():
             Role.query.filter_by(name="v2-client").first().upload_scope = "none"
             auth_db.session.commit()
