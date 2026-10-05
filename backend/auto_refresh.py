@@ -205,8 +205,7 @@ def record_data_update(db, run_id, version, uploads, *, exports_root=None):
     if not config.get("reportIds"):
         return
     # Only full successful uploads can trigger a refresh. Logs, QC, Excel metadata,
-    # and individual report files are not survey-data change signals. V2 project
-    # exports include both processed outputs and configured raw project CSVs.
+    # and individual report files are not survey-data change signals.
     if not uploads or any(row.get("status") != "uploaded" for row in uploads):
         return
     paths = []
@@ -215,10 +214,7 @@ def record_data_update(db, run_id, version, uploads, *, exports_root=None):
         if path.suffix.lower() != ".csv":
             continue
         if version == "V2":
-            parts = Path(row.get("relative_path") or "").parts
-            raw_project = (len(parts) == 4 and parts[0] == "raw_projects"
-                           and parts[3] == "surveycto_data.csv")
-            if not row.get("is_project_data") and not raw_project:
+            if not row.get("is_project_data"):
                 continue
             logical = row.get("relative_path") or row["sharepoint_path"]
         else:

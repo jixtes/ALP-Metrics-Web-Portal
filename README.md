@@ -306,8 +306,7 @@ Row/column ordering and file timestamps do not count as changes; additions,
 deletions and edits do. The first update after enabling a model refreshes once to
 establish its baseline. Models shared by multiple selected dashboards refresh once.
 V3 hashes CSVs in its export directory, excluding QC, individual reports and test
-survey folders. V2 hashes CSVs in successful project `data` folders and configured
-raw project exports; full live-form downloads are excluded. Failed/partial
+survey folders. V2 hashes CSVs in successful project `data` folders. Failed/partial
 pipeline runs and skipped/failed uploads never start an automatic refresh.
 
 The worker records its progress in SQLite, scales F2 to F32, waits until active,
