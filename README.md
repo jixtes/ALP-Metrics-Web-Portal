@@ -130,8 +130,8 @@ and the runner's shared parent `.env`.
 
 After V2 finishes, the portal imports each successful processing job's
 `data/*FullProcessedDataWithLabels.csv` and each successful configured
-`raw_project_exports` CSV. Raw exports appear in Survey overview with a
-"Raw export" label; they are not scored outputs or project data files.
+`raw_project_exports` CSV. These project surveys appear in Survey overview;
+they are not scored outputs or project data files.
 The portal stores project, version, source survey, phase, client, country,
 assessor, submission counts, date ranges, enumerator activity, and entity
 counts. Multiple phases get separate instances. Failed or empty jobs preserve

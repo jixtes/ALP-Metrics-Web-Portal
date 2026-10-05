@@ -3381,7 +3381,7 @@ function App() {
                       <div>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
-                        <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{selectedSurvey.source_survey ? ` · ${selectedSurvey.source_survey}` : ""}{selectedSurvey.preview?.source_kind === "raw" ? " · Raw export" : ""}</p>
+                        <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{selectedSurvey.source_survey ? ` · ${selectedSurvey.source_survey}` : ""}</p>
                       </div>
                     </div>
 
@@ -3599,7 +3599,6 @@ function App() {
                                 {survey.survey_name}
                                 {selectedSurvey && survey.pipeline_version === "V2" ? <span className="pipeline-version-badge" data-version="V2">V2</span> : null}
                                 {survey.source_survey ? <span className="survey-source-label">{survey.source_survey}</span> : null}
-                                {survey.preview?.source_kind === "raw" ? <span className="survey-source-label">Raw export</span> : null}
                               </td>
                               {!selectedSurvey ? (
                                 <>
