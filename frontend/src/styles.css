@@ -622,7 +622,7 @@ select {
 
 .survey-split-column-list-active {
   position: relative;
-  padding-top: 76px !important;
+  padding-top: 16px !important;
   animation: surveyListSettle 240ms ease-out;
 }
 
@@ -635,14 +635,11 @@ select {
 }
 
 .survey-split-column-list-active .section-heading-compact {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .survey-list-preview-actions {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  margin: 0;
+  justify-content: flex-start;
 }
 
 .survey-list-preview-actions .preview-hide-button,
@@ -820,12 +817,18 @@ select {
   flex-shrink: 0;
 }
 
-.section-heading .preview-hide-button,
 .section-heading .survey-overview-button {
   min-width: 170px;
   min-height: 46px;
   padding: 0 22px;
   font-size: 0.96rem;
+}
+
+.section-heading .preview-hide-button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.82rem;
 }
 
 
