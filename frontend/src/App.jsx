@@ -3564,27 +3564,29 @@ function App() {
                   ) : (
                     <div className={`table-wrap${selectedSurvey ? " survey-name-list-wrap" : ""}`}>
                       <table className={selectedSurvey ? "survey-name-list-table" : undefined}>
-                        <thead>
-                          <tr>
-                            {selectedSurvey ? <th>Surveys</th> : surveyColumns.map((column) => {
-                              const isActive = sortConfig.key === column.key;
-                              const sortIndicator = isActive ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕";
+                        {!selectedSurvey ? (
+                          <thead>
+                            <tr>
+                              {surveyColumns.map((column) => {
+                                const isActive = sortConfig.key === column.key;
+                                const sortIndicator = isActive ? (sortConfig.direction === "asc" ? "↑" : "↓") : "↕";
 
-                              return (
-                                <th key={column.key}>
-                                  <button
-                                    type="button"
-                                    className={`sort-button${isActive ? " sort-button-active" : ""}`}
-                                    onClick={() => handleSort(column.key)}
-                                  >
-                                    <span>{column.label}</span>
-                                    <span className="sort-indicator">{sortIndicator}</span>
-                                  </button>
-                                </th>
-                              );
-                            })}
-                          </tr>
-                        </thead>
+                                return (
+                                  <th key={column.key}>
+                                    <button
+                                      type="button"
+                                      className={`sort-button${isActive ? " sort-button-active" : ""}`}
+                                      onClick={() => handleSort(column.key)}
+                                    >
+                                      <span>{column.label}</span>
+                                      <span className="sort-indicator">{sortIndicator}</span>
+                                    </button>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                        ) : null}
                         <tbody>
                           {paginatedSurveys.map((survey) => (
                             <tr
