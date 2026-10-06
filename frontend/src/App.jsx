@@ -3528,24 +3528,27 @@ function App() {
                     )}
                   </div>
 
-                  {!selectedSurvey ? (
-                    <div className="filter-row">
-                      <div className="filter-heading">
-                        <span>Number of surveys: {sortedSurveys.length}</span>
-                      </div>
-                      <input
-                        id="survey-filter"
-                        type="text"
-                        value={surveyFilter}
-                        onChange={(event) => setSurveyFilter(event.target.value)}
-                        placeholder="Filter surveys"
-                        aria-label="Filter surveys"
-                      />
+                  <div className={`filter-row${selectedSurvey ? " survey-search-row-active" : ""}`}>
+                    <div className="filter-heading">
+                      <span>Number of surveys: {sortedSurveys.length}</span>
+                    </div>
+                    <input
+                      id="survey-filter"
+                      type="text"
+                      value={surveyFilter}
+                      onChange={(event) => {
+                        setSurveyFilter(event.target.value);
+                        setSelectedSurveyId(null);
+                      }}
+                      placeholder="Search surveys"
+                      aria-label="Search surveys"
+                    />
+                    {!selectedSurvey ? (
                       <select
                         id="survey-phase-filter"
                         value={surveyPhaseFilter}
                         onChange={(event) => setSurveyPhaseFilter(event.target.value)}
-                        aria-label="Filter surveys by phase"
+                        aria-label="Choose phase"
                       >
                         <option value="">All phases</option>
                         {surveyPhaseOptions.map((phase) => (
@@ -3554,15 +3557,15 @@ function App() {
                           </option>
                         ))}
                       </select>
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </div>
 
                   {isLoading ? (
                     <div className="table-empty">Loading surveys...</div>
                   ) : dashboard.surveys.length === 0 ? (
                     <div className="table-empty">Run the pipeline to populate the survey list.</div>
                   ) : filteredSurveys.length === 0 ? (
-                    <div className="table-empty">No surveys match the current filter.</div>
+                    <div className="table-empty">No surveys match your search or phase selection.</div>
                   ) : (
                     <div className={`table-wrap${selectedSurvey ? " survey-name-list-wrap" : ""}`}>
                       <table className={selectedSurvey ? "survey-name-list-table" : undefined}>
@@ -3665,14 +3668,14 @@ function App() {
                     type="text"
                     value={uploadFilter}
                     onChange={(event) => setUploadFilter(event.target.value)}
-                    placeholder="Filter files"
-                    aria-label="Filter files"
+                    placeholder="Search files"
+                    aria-label="Search files"
                   />
                   <select
                     id="upload-folder-filter"
                     value={uploadFolderFilter}
                     onChange={(event) => setUploadFolderFilter(event.target.value)}
-                    aria-label="Filter by folder"
+                    aria-label="Choose folder"
                   >
                     <option value="">All folders</option>
                     {uploadFolderOptions.map((folder) => (
@@ -3686,7 +3689,7 @@ function App() {
                 {uploadsWithFolders.length === 0 ? (
                   <div className="table-empty">No uploads recorded yet.</div>
                 ) : filteredUploads.length === 0 ? (
-                  <div className="table-empty">No uploads match the current filter.</div>
+                  <div className="table-empty">No files match your search or folder selection.</div>
                 ) : (
                   <div className="table-wrap">
                     <table>

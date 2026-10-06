@@ -845,6 +845,14 @@ select {
   grid-column: 2 / -1;
 }
 
+.filter-row.survey-search-row-active {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.filter-row.survey-search-row-active input {
+  grid-column: 1;
+}
+
 .filter-heading {
   display: flex;
   align-items: baseline;
