@@ -634,15 +634,11 @@ select {
   transform: translateX(0);
 }
 
-.survey-split-column-list-active .section-heading-compact {
-  margin-bottom: 8px;
+.survey-preview-heading .preview-hide-button {
+  margin-bottom: 14px;
 }
 
-.survey-list-preview-actions {
-  justify-content: flex-start;
-}
-
-.survey-list-preview-actions .preview-hide-button,
+.survey-preview-heading .preview-hide-button,
 .survey-overview-button {
   transition:
     background-color 160ms ease,
@@ -651,7 +647,7 @@ select {
     transform 160ms ease;
 }
 
-.survey-list-preview-actions .preview-hide-button:hover,
+.survey-preview-heading .preview-hide-button:hover,
 .survey-overview-button:hover:not(:disabled) {
   border-color: rgba(24, 60, 54, 0.3) !important;
   background: rgba(24, 60, 54, 0.16) !important;
