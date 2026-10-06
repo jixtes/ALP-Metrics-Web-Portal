@@ -3654,7 +3654,6 @@ function App() {
               <section className="survey-split-column survey-split-column-list">
                 <div className="section-heading">
                   <h2>Data files</h2>
-                  <p>One data file per V2 project survey, plus V3 files and their upload status.</p>
                 </div>
 
                 <div className="filter-row">
