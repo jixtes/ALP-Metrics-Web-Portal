@@ -3379,17 +3379,17 @@ function App() {
                   >
                     <div className="section-heading section-heading-inline section-heading-inline-top survey-preview-heading">
                       <div>
-                        <button
-                          type="button"
-                          className="secondary-button secondary-button-compact preview-hide-button"
-                          onClick={() => setSelectedSurveyId(null)}
-                        >
-                          Show as list
-                        </button>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
                         <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{selectedSurvey.source_survey ? ` · ${selectedSurvey.source_survey}` : ""}</p>
                       </div>
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-compact preview-hide-button"
+                        onClick={() => setSelectedSurveyId(null)}
+                      >
+                        Show as list
+                      </button>
                     </div>
 
                     <div className="detail-grid detail-grid-primary detail-grid-compact">
