@@ -154,6 +154,21 @@ class V2IntegrationTests(SnapshotFixture):
         self.assertEqual(rows[0]["preview"]["active_enumerator_count"], 1)
         self.assertEqual(rows[0]["preview"]["entity_category_counts"]["lead_farmers"], rows[0]["submission_count"])
 
+    def test_po_and_sme_use_their_labelled_export_filenames(self):
+        for kind, filename in (
+            ("po", "ALP_PO_FullProcessedDataWithLabel.csv"),
+            ("sme", "ALP_SME_FullProcessedDataWithLabel.csv"),
+        ):
+            with self.subTest(kind=kind):
+                job = {"project_name": "Project", "survey_name": f"{kind} survey", "type": kind}
+                path = self.root / "output" / job["project_name"] / job["survey_name"] / "data" / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                pd.DataFrame([{"project": "Project", "SubmissionDate": "2026-09-01",
+                               "phase_pl": "Baseline"}]).to_csv(path, index=False)
+                rows = v2.build_job_snapshot(self.root / "output", job)
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["submission_count"], 1)
+
     def test_failed_or_mismatched_outputs_do_not_refresh_existing_snapshot(self):
         job = {"project_name": "Project", "survey_name": "Farmer survey", "type": "farmer"}
         self.export(job, [{"project": "Wrong project", "phase_pl": "Baseline", "SubmissionDate": "2026-09-01"}])

@@ -18,6 +18,12 @@ from .repository import RUN_LOCK, pipeline_root, repo_status, commit_details, pu
 from .snapshots import SUMMARY_COLUMNS, build_snapshot_dataframe
 
 ENTITY_TYPES = {"farmer": "Lead farmer", "retailer": "Retailer", "po": "Producer organisation", "sme": "SME"}
+PROCESSED_EXPORT_NAMES = {
+    "farmer": "ALP_Farmer_FullProcessedDataWithLabels.csv",
+    "retailer": "ALP_Farmer_FullProcessedDataWithLabels.csv",
+    "po": "ALP_PO_FullProcessedDataWithLabel.csv",
+    "sme": "ALP_SME_FullProcessedDataWithLabel.csv",
+}
 RAW_ENTITY_TYPES = {
     "alp_commercial_farmer_survey": "Commercial farmer",
     "alp_lead_farmer_survey": "Lead farmer",
@@ -73,10 +79,10 @@ def job_directory(output_dir: Path, job: dict) -> Path:
 
 def build_job_snapshot(output_dir: Path, job: dict, folder_url: str | None = None) -> list[dict]:
     folder = job_directory(output_dir, job)
-    exports = list((folder / "data").glob("*FullProcessedDataWithLabels.csv"))
-    if len(exports) != 1:
-        raise ValueError("Expected one processed, labelled export for the V2 project.")
-    export = exports[0]
+    filename = PROCESSED_EXPORT_NAMES[job["type"]]
+    export = folder / "data" / filename
+    if not export.is_file():
+        raise ValueError(f"Expected processed, labelled export {filename} for the V2 project.")
     if export.is_symlink() or not export.resolve().is_relative_to(output_dir.resolve()):
         raise ValueError("V2 processed export must be inside this run's output directory.")
     overview_columns = set(SUMMARY_COLUMNS.values()) | {"ifcproject_pl", "mfid_key", "rtid_key", "poid_key", "smeid_key"}
