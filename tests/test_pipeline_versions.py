@@ -162,6 +162,24 @@ class V2IntegrationTests(SnapshotFixture):
         self.assertEqual((rows, files, refreshed), ([], [], []))
         self.assertEqual(len(errors), 2)
 
+    def test_processed_project_replaces_its_old_raw_snapshot(self):
+        job = {"type": "farmer", "form_id": "alp_lead_farmer_survey",
+               "project_name": "Project", "survey_name": "Farmer survey"}
+        old_key = v2.raw_source_key(job, job["survey_name"])
+        self.publish("V2", [survey(source_key=old_key, project_key="V2:Project")],
+                     [upload("old-raw.csv", source_key=old_key)])
+        self.export(job)
+        manifest = {"jobs": [{"job": job, "success": True}],
+                    "sharepoint": {"status": "completed", "files": []}}
+        rows, files, refreshed, errors = v2.collect_snapshots(manifest, self.root / "output")
+        self.assertEqual(errors, [])
+        self.assertIn(old_key, refreshed)
+        self.publish("V2", rows, files, refreshed)
+        current = fetch_dashboard(self.db)
+        self.assertEqual(len(current["surveys"]), 1)
+        self.assertEqual(current["surveys"][0]["source_key"], v2.source_key(job))
+        self.assertNotIn("old-raw.csv", {item["file_name"] for item in current["uploads"]})
+
     def test_raw_project_exports_create_portal_surveys_without_exposing_raw_project_files(self):
         relative = "raw_projects/ETG Mozambique Baseline 2025/ALP Retailer Survey/surveycto_data.csv"
         path = self.root / "output" / relative

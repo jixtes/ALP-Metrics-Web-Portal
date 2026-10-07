@@ -209,6 +209,11 @@ def collect_snapshots(manifest: dict, output_dir: Path) -> tuple[list, list, lis
             summaries.extend(rows)
             files.extend(job_files)
             refreshed.append(source_key(job))
+            # A project formerly published through raw_project_exports has a
+            # different source key. Retire that snapshot once its processed
+            # replacement has been built successfully.
+            if job.get("form_id"):
+                refreshed.append(raw_source_key(job, job["survey_name"]))
         except (ValueError, OSError, KeyError) as exc:
             errors.append(f"{name}: {exc}")
     for entry in manifest.get("raw_project_exports", {}).get("files", []):
