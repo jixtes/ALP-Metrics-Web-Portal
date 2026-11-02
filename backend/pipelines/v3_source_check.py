@@ -20,7 +20,6 @@ from dotenv import dotenv_values
 
 SOURCES = (
     ("form", "alp_metrics_survey_v3"),
-    ("form", "alp_metrics_survey_v3_promat"),
     ("dataset", "alp_metrics_survey_v3_wide_historic_data"),
 )
 _SERVER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*$")

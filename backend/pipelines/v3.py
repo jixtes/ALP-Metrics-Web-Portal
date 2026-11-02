@@ -86,7 +86,8 @@ def run_pipeline_and_snapshot(
         try:
             source_version = None
             check_sources = (
-                extract_mode == "surveycto"
+                not force_run
+                and extract_mode == "surveycto"
                 and upload_to_sharepoint
                 and publish_snapshot
             )
@@ -96,8 +97,7 @@ def run_pipeline_and_snapshot(
                 previous = fetch_pipeline_source_version(db_path, "V3")
                 commit = pipeline_status.get("commit")
                 unchanged = (
-                    not force_run
-                    and previous is not None
+                    previous is not None
                     and previous["fingerprint"] == source_version["fingerprint"]
                     and previous.get("pipeline_commit") == commit
                     and bool(commit)

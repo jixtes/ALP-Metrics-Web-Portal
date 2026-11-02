@@ -203,6 +203,19 @@ Analysts and reviewers should follow the pipeline repository's
 [Git and release workflow](https://github.com/jixtes/ALP-Metrics-V3-pipeline/blob/main/CONTRIBUTING.md)
 before code is pulled onto a staging or production server.
 
+Normal V3 updates also run a SurveyCTO source check before executing the pipeline
+to skip processing when inputs are unchanged. Its source list lives separately in
+`backend/pipelines/v3_source_check.py` and must match the notebook's active inputs.
+It currently checks the main V3 form and historic dataset; the inaccessible Promat
+form is excluded. Changes to this check require deploying the **web portal** and
+restarting its backend. Settings -> Pipeline -> Pull updates only the pipeline
+checkout and does not deploy portal backend changes.
+
+The Settings pipeline run button forces a full V3 run and bypasses this source
+check entirely. It runs the pipeline's extraction, processing, uploads, and snapshot
+publication directly. Normal Update data and scheduled runs retain the source
+check. A Settings run does not advance the source-check fingerprint.
+
 ## Database Files
 
 The web portal owns all application state:

@@ -30,7 +30,7 @@ class V3SourceFingerprintTests(unittest.TestCase):
         self.assertNotEqual(before, edited)
         self.assertNotEqual(before, duplicate)
 
-    def test_downloads_the_same_three_sources_used_by_v3(self):
+    def test_downloads_active_v3_sources_without_requesting_inaccessible_promat(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / ".env").write_text(
@@ -41,6 +41,8 @@ class V3SourceFingerprintTests(unittest.TestCase):
             calls = []
 
             def request_get(url, **kwargs):
+                if url.endswith("/alp_metrics_survey_v3_promat"):
+                    raise AssertionError("The retired Promat form must not be requested.")
                 calls.append((url, kwargs))
                 response = Mock()
                 response.content = b"KEY,value\nuuid:1,a\n"
@@ -48,13 +50,17 @@ class V3SourceFingerprintTests(unittest.TestCase):
                 return response
 
             result = surveycto_source_fingerprint(root, request_get=request_get)
-            self.assertEqual(len(result["sources"]), 3)
-            self.assertEqual([item["rowCount"] for item in result["sources"]], [1, 1, 1])
+            self.assertEqual(len(result["sources"]), 2)
+            self.assertEqual([item["rowCount"] for item in result["sources"]], [1, 1])
+            self.assertEqual([item["id"] for item in result["sources"]], [
+                "alp_metrics_survey_v3",
+                "alp_metrics_survey_v3_wide_historic_data",
+            ])
             self.assertEqual(calls[0][1]["auth"], ("portal@example.com", "secret"))
             self.assertEqual(calls[0][1]["timeout"], 120)
             self.assertIn("/api/v1/forms/data/wide/csv/alp_metrics_survey_v3", calls[0][0])
-            self.assertIn("/api/v1/forms/data/wide/csv/alp_metrics_survey_v3_promat", calls[1][0])
-            self.assertIn("/api/v2/datasets/data/csv/alp_metrics_survey_v3_wide_historic_data", calls[2][0])
+            self.assertEqual(len(calls), 2)
+            self.assertIn("/api/v2/datasets/data/csv/alp_metrics_survey_v3_wide_historic_data", calls[1][0])
 
 
 class V3PreflightIntegrationTests(unittest.TestCase):
@@ -154,7 +160,7 @@ class V3PreflightIntegrationTests(unittest.TestCase):
         self.assertEqual(dashboard["latest_runs"]["V3"]["id"], legacy_id)
         self.assertEqual(dashboard["latest_pipeline_runs"]["V3"]["id"], prior_id)
 
-    def test_forced_run_ignores_an_unchanged_source_fingerprint(self):
+    def test_settings_forced_run_bypasses_source_check_even_if_it_would_fail(self):
         self._prior_version()
         export = self.root / "final.csv"
         pd.DataFrame([{"project": "Project", "SubmissionDate": "2026-09-28"}]).to_csv(export, index=False)
@@ -166,9 +172,11 @@ class V3PreflightIntegrationTests(unittest.TestCase):
         )
         with (
             patch.object(v3, "get_pipeline_repo_status", return_value=self.repo),
-            patch.object(v3, "surveycto_source_fingerprint", return_value={
-                "fingerprint": "same", "sources": [{}, {}, {}],
-            }) as source_check,
+            patch.object(v3, "surveycto_source_fingerprint", side_effect=RuntimeError(
+                "SurveyCTO source check is unavailable"
+            )) as source_check,
+            patch.object(v3, "fetch_pipeline_source_version") as fetch_version,
+            patch.object(v3, "save_pipeline_source_version") as save_version,
             patch.object(v3, "_build_pipeline_config", return_value=config),
             patch.object(v3, "_run_pipeline_with_log_capture", return_value="Forced pipeline log") as run,
             patch.object(v3, "_upload_export_files", return_value=[]),
@@ -179,7 +187,9 @@ class V3PreflightIntegrationTests(unittest.TestCase):
                 upload_to_sharepoint=True,
                 publish_snapshot=True,
             )
-        source_check.assert_called_once()
+        source_check.assert_not_called()
+        fetch_version.assert_not_called()
+        save_version.assert_not_called()
         run.assert_called_once()
         self.assertEqual(result["status"], "completed")
         self.assertNotIn("skipped", result)
