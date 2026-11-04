@@ -118,6 +118,12 @@ function formatList(items) {
   return items.length > 0 ? items.join(", ") : "N/A";
 }
 
+function surveySourceLabel(survey) {
+  return survey.source_survey && survey.source_survey !== survey.survey_name
+    ? survey.source_survey
+    : survey.preview?.entity_type_label || "";
+}
+
 function formatUploadScope(scope) {
   if (scope === "project_files") {
     return "Project files";
@@ -2001,6 +2007,7 @@ function App() {
       survey.assessor,
       survey.pipeline_version,
       survey.source_survey,
+      survey.preview?.entity_type_label,
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedFilter));
@@ -3381,7 +3388,7 @@ function App() {
                       <div>
                         <p className="eyebrow">Selected survey</p>
                         <h2>{selectedSurvey.survey_name}</h2>
-                        <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{selectedSurvey.source_survey ? ` · ${selectedSurvey.source_survey}` : ""}</p>
+                        <p className="run-meta">{selectedSurvey.pipeline_version || "V3"}{surveySourceLabel(selectedSurvey) ? ` · ${surveySourceLabel(selectedSurvey)}` : ""}</p>
                       </div>
                       <button
                         type="button"
@@ -3598,7 +3605,7 @@ function App() {
                               <td data-label="Survey">
                                 {survey.survey_name}
                                 {selectedSurvey && survey.pipeline_version === "V2" ? <span className="pipeline-version-badge" data-version="V2">V2</span> : null}
-                                {survey.source_survey ? <span className="survey-source-label">{survey.source_survey}</span> : null}
+                                {surveySourceLabel(survey) ? <span className="survey-source-label">{surveySourceLabel(survey)}</span> : null}
                               </td>
                               {!selectedSurvey ? (
                                 <>

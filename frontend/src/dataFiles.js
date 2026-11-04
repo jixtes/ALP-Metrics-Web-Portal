@@ -12,19 +12,25 @@ export function groupProjectFiles(uploads) {
       continue;
     }
     const parts = (item.relative_path || "").split("/");
+    const entityScoped = parts.length === 4
+      && ["farmer", "retailer", "po", "sme", "commercial_farmer"].includes(parts[0])
+      && parts[3].startsWith(`${parts[1]}__`);
     const processed = Boolean(item.is_project_data) && parts.length === 4
       && parts[2] === "data" && /fullprocesseddatawithlabels?\.csv$/i.test(parts[3]);
-    const rawProject = parts.length === 4 && parts[0] === "raw_projects" && parts[3] === "surveycto_data.csv";
+    const rawProject = parts.length === 4 && (
+      (parts[0] === "raw_projects" && parts[3] === "surveycto_data.csv")
+      || (entityScoped && parts[2] === "raw" && parts[3] === `${parts[1]}__surveycto_data.csv`)
+    );
     if (!processed && !rawProject) continue;
-    const projectName = rawProject ? parts[1] : parts[0];
-    const surveyName = rawProject ? parts[2] : parts[1];
+    const projectName = entityScoped ? (item.project_key || "").replace(/^V2:/, "") : rawProject ? parts[1] : parts[0];
+    const surveyName = entityScoped ? parts[1] : rawProject ? parts[2] : parts[1];
     const projectKey = item.project_key || `V2:${projectName}`;
-    const key = JSON.stringify([projectKey, surveyName]);
+    const key = JSON.stringify(entityScoped ? [projectKey, parts[0], surveyName] : [projectKey, surveyName]);
     const row = {
       ...item,
       id: `survey:${key}`,
-      file_name: `${projectName} · ${surveyName}`,
-      folder: item.folder || (rawProject ? "V2" : `V2/${projectName}/${surveyName}/data`),
+      file_name: entityScoped ? surveyName : `${projectName} · ${surveyName}`,
+      folder: item.folder || (entityScoped ? `V2/${parts.slice(0, -1).join("/")}` : rawProject ? "V2" : `V2/${projectName}/${surveyName}/data`),
       web_url: item.web_url || null,
     };
     const existing = surveys.get(key);

@@ -13,7 +13,7 @@ from uuid import uuid4
 from dotenv import dotenv_values
 import pandas as pd
 
-from ..database import complete_pipeline_run, insert_pipeline_run, publish_run_snapshot
+from ..database import complete_pipeline_run, connect_database, insert_pipeline_run, publish_run_snapshot
 from .repository import RUN_LOCK, pipeline_root, repo_status, commit_details, pull_repo
 from .snapshots import SUMMARY_COLUMNS, build_snapshot_dataframe
 
@@ -32,6 +32,7 @@ RAW_ENTITY_TYPES = {
     "alp_retailer_with_fpa_survey": "Retailer",
     "alp_generic_company_survey": "SME",
 }
+OUTPUT_LAYOUT = "entity_survey"
 
 
 def get_pipeline_repo_status() -> dict:
@@ -71,7 +72,16 @@ def job_directory(output_dir: Path, job: dict) -> Path:
         name = job[key]
         if not name or name in {".", ".."} or "/" in name or "\\" in name:
             raise ValueError(f"Invalid V2 {key} for an output folder.")
-    result = (output_dir / job["project_name"] / job["survey_name"]).resolve()
+    layout = job.get("output_layout")
+    if layout is None:
+        relative = Path(job["project_name"]) / job["survey_name"]
+    elif layout == OUTPUT_LAYOUT:
+        if job.get("entity_type") != job["type"] or job["type"] not in ENTITY_TYPES:
+            raise ValueError("Invalid V2 output entity type.")
+        relative = Path(job["entity_type"]) / job["survey_name"]
+    else:
+        raise ValueError("Unknown V2 output layout.")
+    result = (output_dir / relative).resolve()
     if not result.is_relative_to(output_dir.resolve()):
         raise ValueError("V2 project output is outside this run's output directory.")
     return result
@@ -80,6 +90,8 @@ def job_directory(output_dir: Path, job: dict) -> Path:
 def build_job_snapshot(output_dir: Path, job: dict, folder_url: str | None = None) -> list[dict]:
     folder = job_directory(output_dir, job)
     filename = PROCESSED_EXPORT_NAMES[job["type"]]
+    if job.get("output_layout") == OUTPUT_LAYOUT:
+        filename = f"{job['survey_name']}__{filename}"
     export = folder / "data" / filename
     if not export.is_file():
         raise ValueError(f"Expected processed, labelled export {filename} for the V2 project.")
@@ -112,6 +124,9 @@ def build_job_snapshot(output_dir: Path, job: dict, folder_url: str | None = Non
                        instance_key=json.dumps([source_key(job), phase_key], ensure_ascii=False),
                        project_key=project_key(job), source_survey=job["survey_name"],
                        data_folder_url=folder_url)
+            if job.get("output_layout") == OUTPUT_LAYOUT:
+                row["survey_name"] = job["survey_name"]
+                row["preview"].update(survey_name=job["survey_name"], entity_type_label=ENTITY_TYPES[job["type"]])
         summaries.extend(rows)
     return summaries
 
@@ -123,13 +138,24 @@ def raw_source_key(entry: dict, survey_name: str) -> str:
 def raw_export_path(output_dir: Path, entry: dict) -> tuple[Path, str]:
     relative = PurePosixPath(entry.get("relative_path") or "")
     parts = relative.parts
-    if (len(parts) != 4 or parts[0] != "raw_projects" or parts[1] != entry.get("project_name")
-            or not parts[2] or parts[2] in {".", ".."} or parts[3] != "surveycto_data.csv"):
-        raise ValueError("Invalid V2 raw project export path.")
+    if entry.get("output_layout") == OUTPUT_LAYOUT:
+        survey_name = entry.get("survey_name")
+        entity = entry.get("entity_type")
+        if (not isinstance(survey_name, str) or not survey_name or survey_name in {".", ".."}
+                or "/" in survey_name or "\\" in survey_name
+                or not isinstance(entity, str) or entity not in {*ENTITY_TYPES, "commercial_farmer"}
+                or parts != (entity, survey_name, "raw", f"{survey_name}__surveycto_data.csv")):
+            raise ValueError("Invalid V2 raw project export path.")
+    else:
+        if (entry.get("output_layout") is not None or len(parts) != 4 or parts[0] != "raw_projects"
+                or parts[1] != entry.get("project_name") or not parts[2] or parts[2] in {".", ".."}
+                or parts[3] != "surveycto_data.csv"):
+            raise ValueError("Invalid V2 raw project export path.")
+        survey_name = parts[2]
     path = output_dir.joinpath(*parts)
     if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(output_dir.resolve()):
         raise ValueError("V2 raw project export is missing or outside this run's output directory.")
-    return path, parts[2]
+    return path, survey_name
 
 
 def build_raw_export_snapshot(path: Path, entry: dict, survey_name: str) -> list[dict]:
@@ -173,6 +199,10 @@ def build_raw_export_snapshot(path: Path, entry: dict, survey_name: str) -> list
                        project_key="V2:" + entry["project_name"], source_survey=survey_name,
                        data_folder_url=None)
             row["preview"]["source_kind"] = "raw"
+            if entry.get("output_layout") == OUTPUT_LAYOUT:
+                row["survey_name"] = survey_name
+                row["preview"].update(survey_name=survey_name,
+                                      entity_type_label=RAW_ENTITY_TYPES.get(entry["form_id"], entry["entity_type"]))
         summaries.extend(rows)
     return summaries
 
@@ -255,6 +285,45 @@ def is_empty_job(entry: dict) -> bool:
             and result.get("reason") == "no_project_records")
 
 
+def _configured_source_key(job: dict) -> str:
+    if not isinstance(job, dict) or not isinstance(job.get("type"), str) or job["type"] not in {*ENTITY_TYPES, "raw"}:
+        raise ValueError("Invalid configured V2 job in run manifest.")
+    for field in ("project_name", "survey_name"):
+        value = job.get(field)
+        if not isinstance(value, str) or not value.strip() or value in {".", ".."} or "/" in value or "\\" in value:
+            raise ValueError(f"Invalid configured V2 {field} in run manifest.")
+    if job["type"] == "raw":
+        if not isinstance(job.get("form_id"), str) or not job["form_id"]:
+            raise ValueError("Configured raw V2 job is missing form_id.")
+        return raw_source_key(job, job["survey_name"])
+    return source_key(job)
+
+
+def _reconciliation_plan(db_path: Path, manifest: dict, uploads: list[dict], refreshed: list[str]) -> tuple[list[str], int, list[dict]]:
+    """Plan removals and the complete next upload state without deleting anything."""
+    configured_jobs = manifest.get("configured_jobs")
+    if not isinstance(configured_jobs, list):
+        raise ValueError("Full V2 run manifest is missing configured_jobs.")
+    configured = {_configured_source_key(job) for job in configured_jobs}
+    produced = {_configured_source_key(entry["job"]) for entry in manifest.get("jobs", [])}
+    produced.update(row["source_key"] for row in uploads)
+    if produced != configured:
+        raise ValueError("V2 run outputs do not match the declared configuration.")
+    with connect_database(db_path) as connection:
+        previous_surveys = connection.execute(
+            "SELECT source_key FROM survey_summaries WHERE pipeline_version='V2'"
+        ).fetchall()
+        previous_uploads = [dict(row) for row in connection.execute(
+            "SELECT * FROM pipeline_uploads WHERE pipeline_version='V2'"
+        ).fetchall()]
+    existing = {row["source_key"] for row in [*previous_surveys, *previous_uploads]}
+    removed = existing - configured
+    removed_count = sum(row["source_key"] in removed for row in previous_surveys)
+    replaced = removed | set(refreshed)
+    retained_uploads = [row for row in previous_uploads if row["source_key"] not in replaced]
+    return sorted(removed), removed_count, retained_uploads + uploads
+
+
 def run_pipeline_and_snapshot(db_path: Path, *, run_id: int | None = None,
                               upload_to_sharepoint: bool = True,
                               triggered_by_email: str | None = None,
@@ -297,20 +366,40 @@ def run_pipeline_and_snapshot(db_path: Path, *, run_id: int | None = None,
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             empty_jobs = [entry["job"] for entry in manifest.get("jobs", []) if is_empty_job(entry)]
             summaries, uploads, refreshed, errors = collect_snapshots(manifest, output_dir)
-            if refreshed:
-                publish_run_snapshot(db_path, run_id=run_id, pipeline_version="V2", survey_rows=summaries,
-                                     record_rows=[], upload_rows=uploads, source_keys=refreshed)
+            full_configuration = (manifest.get("configuration_scope") == "full"
+                                  and manifest.get("bootstrap", {}).get("status") == "completed")
             if result.returncode and not errors:
                 errors.append(f"V2 runner exited with code {result.returncode}.")
             if manifest.get("sharepoint", {}).get("status") == "failed":
                 errors.append("Some SharePoint uploads failed; see the file upload status.")
-            if not refreshed and not errors and not empty_jobs:
+            if not refreshed and not errors and not empty_jobs and not full_configuration:
                 errors.append("V2 did not produce any project snapshots.")
             status = "partial" if errors and refreshed else "failed" if errors else "completed"
-            if status == "completed" and upload_to_sharepoint:
+            removed, removed_count, next_uploads = [], 0, uploads
+            fingerprint = None
+            if status == "completed" and full_configuration:
+                removed, removed_count, next_uploads = _reconciliation_plan(db_path, manifest, uploads, refreshed)
+                publication_complete = (upload_to_sharepoint
+                                        and manifest.get("sharepoint", {}).get("status") == "completed")
+                if publication_complete:
+                    from ..auto_refresh import data_update_fingerprint, settings
+                    if settings(db_path).get("reportIds"):
+                        fingerprint = data_update_fingerprint("V2", next_uploads, allow_empty=True)
+
+            # Compare the proposed data first, then replace snapshots and remove
+            # unconfigured sources in the same database transaction.
+            if refreshed or removed:
+                publish_run_snapshot(db_path, run_id=run_id, pipeline_version="V2", survey_rows=summaries,
+                                     record_rows=[], upload_rows=uploads, source_keys=sorted(set(refreshed) | set(removed)))
+            if fingerprint is not None:
+                from ..auto_refresh import record_data_update
+                record_data_update(db_path, run_id, "V2", next_uploads, fingerprint=fingerprint, allow_empty=True)
+            elif status == "completed" and upload_to_sharepoint and not full_configuration:
                 from ..auto_refresh import record_data_update
                 record_data_update(db_path, run_id, "V2", uploads)
             message = f"V2 updated {len(summaries)} survey snapshots ({sum(r['submission_count'] for r in summaries)} records)."
+            if removed_count:
+                message += f" Removed {removed_count} survey instances no longer configured."
             for job in empty_jobs:
                 message += (f" {job['project_name']} / {job['survey_name']}: skipped because the configured source"
                             " has no matching project records; any existing snapshot kept.")
@@ -322,7 +411,7 @@ def run_pipeline_and_snapshot(db_path: Path, *, run_id: int | None = None,
             complete_pipeline_run(db_path, run_id=run_id, status=status, completed_at=now(), message=message,
                                   pipeline_commit_after=get_pipeline_repo_status().get("commit"), run_log=log_text)
             return {"run_id": run_id, "status": status, "pipeline_version": "V2", "message": message,
-                    "uploads": uploads, "log": log_text}
+                    "uploads": uploads, "log": log_text, "removed_survey_count": removed_count}
         except Exception as exc:
             log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path and log_path.exists() else str(exc)
             complete_pipeline_run(db_path, run_id=run_id, status="failed", completed_at=now(), message=str(exc),

@@ -192,6 +192,28 @@ class AutoRefreshTests(unittest.TestCase):
         self.csv.write_text('id,value\n1,a\n2,b\n2,b\n')
         self.assertNotEqual(before, auto.csv_fingerprint([('data', self.csv)]))
 
+    def test_empty_v2_fingerprint_requires_explicit_authoritative_publication(self):
+        self.assertIsNone(auto.data_update_fingerprint('V2', []))
+        empty = auto.data_update_fingerprint('V2', [], allow_empty=True)
+        self.assertIsInstance(empty, str)
+        self.assertNotEqual(empty, auto.data_update_fingerprint('V2', [{
+            'local_path': str(self.csv), 'status': 'uploaded', 'is_project_data': True,
+            'relative_path': 'Project/Survey/data/data.csv'}]))
+        with self.assertRaisesRegex(ValueError, 'No uploaded survey CSV'):
+            auto.csv_fingerprint([])
+
+    def test_empty_v2_publication_does_not_bypass_failed_upload_guards(self):
+        self.assertIsNone(auto.data_update_fingerprint('V2', [{
+            'local_path': str(self.csv), 'status': 'failed', 'is_project_data': True}], allow_empty=True))
+        auto.record_data_update(self.db, 1000, 'V2', [{
+            'local_path': str(self.csv), 'status': 'failed', 'is_project_data': True}], allow_empty=True)
+        self.assertIsNone(auto.latest_job(self.db))
+
+    def test_v3_does_not_accept_the_v2_empty_publication_flag(self):
+        self.assertIsNone(auto.data_update_fingerprint('V3', [], allow_empty=True))
+        auto.record_data_update(self.db, 1000, 'V3', [], allow_empty=True)
+        self.assertIsNone(auto.latest_job(self.db))
+
     def test_checkbox_save_retains_capacity_without_a_visible_capacity_field(self):
         saved = auto.save_settings(self.db, {'reportIds': ['r2']}, client=self.client,
                                    fabric_factory=lambda _: self.fabric)

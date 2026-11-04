@@ -181,7 +181,7 @@ def queue_manual_refresh(db, dataset_id, *, client=None, fabric_factory=FabricCl
     return latest_job(db)
 
 
-def csv_fingerprint(paths):
+def csv_fingerprint(paths, *, allow_empty=False):
     """Ignore row/column ordering and file metadata; preserve duplicate rows and all field values."""
     files = []
     for logical_name, path in sorted(paths, key=lambda item: item[0]):
@@ -195,19 +195,16 @@ def csv_fingerprint(paths):
                     raise ValueError(f"Invalid CSV row in {Path(path).name}; refresh not queued.")
                 rows.append(hashlib.sha256(json.dumps([row[i] for i in order], ensure_ascii=False).encode()).hexdigest())
         files.append([logical_name, [columns[i] for i in order], sorted(rows)])
-    if not files:
+    if not files and not allow_empty:
         raise ValueError("No uploaded survey CSV files were found for automatic refresh.")
     return hashlib.sha256(json.dumps(files, ensure_ascii=False).encode()).hexdigest()
 
 
-def record_data_update(db, run_id, version, uploads, *, exports_root=None):
-    config = settings(db)
-    if not config.get("reportIds"):
-        return
-    # Only full successful uploads can trigger a refresh. Logs, QC, Excel metadata,
-    # and individual report files are not survey-data change signals.
-    if not uploads or any(row.get("status") != "uploaded" for row in uploads):
-        return
+def data_update_fingerprint(version, uploads, *, exports_root=None, allow_empty=False):
+    """Calculate the next data version before changing portal snapshots."""
+    allow_empty = allow_empty and version == "V2"
+    if (not uploads and not allow_empty) or any(row.get("status") != "uploaded" for row in uploads):
+        return None
     paths = []
     for row in uploads:
         path = Path(row["local_path"])
@@ -225,7 +222,22 @@ def record_data_update(db, run_id, version, uploads, *, exports_root=None):
             if {part.lower() for part in Path(logical).parts}.intersection({"qc", "individual_reports", "test_survey"}):
                 continue
         paths.append((logical, path))
-    fingerprint = csv_fingerprint(paths)
+    if not paths and version == "V2" and not allow_empty:
+        return None
+    return csv_fingerprint(paths, allow_empty=allow_empty)
+
+
+def record_data_update(db, run_id, version, uploads, *, exports_root=None,
+                       fingerprint=None, allow_empty=False):
+    config = settings(db)
+    if not config.get("reportIds"):
+        return
+    if (not uploads and not (allow_empty and version == "V2")) or any(row.get("status") != "uploaded" for row in uploads):
+        return
+    if fingerprint is None:
+        fingerprint = data_update_fingerprint(version, uploads, exports_root=exports_root, allow_empty=allow_empty)
+    if fingerprint is None:
+        return
     with connect_database(db) as conn:
         conn.execute("BEGIN IMMEDIATE")
         # Capture the latest saved selection while publishing the data generation.

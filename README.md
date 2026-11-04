@@ -129,7 +129,7 @@ are passed to the child process; SurveyCTO settings are read from V2's `.env`
 and the runner's shared parent `.env`.
 
 After V2 finishes, the portal imports each successful processing job's
-`data/*FullProcessedDataWithLabels.csv` and each successful configured
+labelled `data/*FullProcessedDataWithLabel*.csv` and each successful configured
 `raw_project_exports` CSV. These project surveys appear in Survey overview;
 they are not scored outputs or project data files.
 The portal stores project, version, source survey, phase, client, country,
@@ -138,6 +138,31 @@ counts. Multiple phases get separate instances. Failed or empty jobs preserve
 their previous snapshots. Empty sources are skipped with an explanation;
 processing failures alongside successful jobs are reported as a partial update.
 Raw respondent previews remain disabled.
+
+New bootstrap outputs use `<entity_type>/<survey_name>/...` and prefix filenames
+with `<survey_name>__`. The manifest declares `output_layout: entity_survey`.
+The configured `survey_name` is the primary label in Survey overview and Data
+files; entity labels distinguish identical survey names across entity types.
+Project metadata and project-based permissions continue to use the source
+`project_name`. Commercial Farmer raw-only exports use
+`commercial_farmer/<survey_name>/raw/<survey_name>__surveycto_data.csv`.
+Older V2 layouts and filenames remain supported. Power BI queries using fixed
+SharePoint paths must be updated for the new layout; old remote files are kept.
+
+After a successful full V2 run, the portal reconciles its survey summaries and
+file links with the run's declared `configured_jobs`. Removed or renamed survey
+instances are retired from the portal database. This requires a new bootstrap
+manifest with `configuration_scope: full` and completed preparation; older
+manifests, type-specific runs, failed runs and partial runs cannot authorize
+cleanup. Configured empty jobs retain their previous summaries and file links.
+V3 snapshots, pipeline history and SharePoint files are retained.
+
+The portal calculates the proposed processed-data fingerprint before removing
+database entries, publishes the snapshot changes atomically, then queues any
+needed Power BI refresh. The proposed state includes retained empty jobs and
+excludes removed surveys. Removing the final V2 survey is supported, including an
+empty `pipelines` configuration. SharePoint CSVs are not deleted: reports that
+still read those files can continue to show their contents after refresh.
 
 Database initialization adds `pipeline_version` to runs, snapshots, and files;
 existing entries become V3. Updates replace only the selected version's data,

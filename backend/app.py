@@ -679,7 +679,10 @@ def _is_project_data_upload(upload: dict) -> bool:
     if upload.get("pipeline_version") == "V2":
         parts = str(upload.get("relative_path") or "").split("/")
         processed = bool(upload.get("is_project_data")) and len(parts) >= 4 and parts[2] == "data"
-        raw_project = len(parts) == 4 and parts[0] == "raw_projects" and parts[3] == "surveycto_data.csv"
+        raw_project = len(parts) == 4 and (
+            (parts[0] == "raw_projects" and parts[3] == "surveycto_data.csv")
+            or (parts[0] in {"farmer", "retailer", "po", "sme", "commercial_farmer"}
+                and parts[2] == "raw" and parts[3] == f"{parts[1]}__surveycto_data.csv"))
         return processed or raw_project
     relative_path = f"/{_upload_relative_path(upload).lower().strip('/')}/"
     return f"/{PROJECT_DATA_UPLOAD_FOLDER}/" in relative_path

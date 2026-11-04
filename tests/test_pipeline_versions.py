@@ -319,6 +319,77 @@ raise SystemExit(1)
         self.assertEqual({s["pipeline_version"] for s in current["surveys"]}, {"V2", "V3"})
 
 
+class V2SurveyLabelTests(SnapshotFixture):
+    def export(self, kind, label="Configured label", project="Source project"):
+        job = {"type": kind, "entity_type": kind, "form_id": "form", "project_name": project,
+               "survey_name": label, "output_layout": "entity_survey"}
+        filename = f"{label}__{v2.PROCESSED_EXPORT_NAMES[kind]}"
+        relative = Path(kind) / label / "data" / filename
+        path = self.root / "output" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"project": project, "SubmissionDate": "2026-11-04", "phase_pl": "Baseline",
+                       "enumerator": "E"}]).to_csv(path, index=False)
+        return job, relative
+
+    def test_configured_survey_label_is_used_for_all_processed_entity_types(self):
+        for kind in ("farmer", "retailer", "po", "sme"):
+            with self.subTest(kind=kind):
+                job, relative = self.export(kind)
+                rows = v2.build_job_snapshot(self.root / "output", job, "https://example/data")
+                self.assertEqual(rows[0]["survey_name"], "Configured label")
+                self.assertEqual(rows[0]["source_survey"], "Configured label")
+                self.assertEqual(rows[0]["project_label"], "Source project")
+                self.assertEqual(rows[0]["preview"]["survey_name"], "Configured label")
+                self.assertEqual(rows[0]["preview"]["entity_type_label"], v2.ENTITY_TYPES[kind])
+                self.assertEqual(rows[0]["data_folder_url"], "https://example/data")
+                self.assertEqual(v2.job_directory(self.root / "output", job), (self.root / "output" / relative).parent.parent)
+
+    def test_shared_labels_across_entities_and_raw_exports_remain_separate_instances(self):
+        farmer, farmer_path = self.export("farmer", label="Shared survey")
+        retailer, retailer_path = self.export("retailer", label="Shared survey")
+        raw_path = Path("commercial_farmer/Shared survey/raw/Shared survey__surveycto_data.csv")
+        destination = self.root / "output" / raw_path
+        destination.parent.mkdir(parents=True)
+        pd.DataFrame([{"project": "Source project", "SubmissionDate": "2026-11-04", "phase_pl": "Baseline"}]).to_csv(destination, index=False)
+        raw = {"project_name": "Source project", "form_id": "alp_commercial_farmer_survey", "survey_name": "Shared survey",
+               "entity_type": "commercial_farmer", "output_layout": "entity_survey", "rows": 1,
+               "status": "exported", "relative_path": raw_path.as_posix()}
+        manifest = {"jobs": [{"job": farmer, "success": True}, {"job": retailer, "success": True}],
+                    "raw_project_exports": {"status": "completed", "files": [raw]},
+                    "sharepoint": {"status": "completed", "files": [
+                        {"relative_path": path.as_posix(), "status": "uploaded", "web_url": "https://example/file"}
+                        for path in (farmer_path, retailer_path, raw_path)]}}
+        rows, files, refreshed, errors = v2.collect_snapshots(manifest, self.root / "output")
+        self.assertEqual(errors, [])
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({row["survey_name"] for row in rows}, {"Shared survey"})
+        self.assertEqual(len({row["source_key"] for row in rows}), 3)
+        self.assertEqual(len({file["relative_path"] for file in files}), 3)
+        self.assertTrue(all(file["status"] == "uploaded" for file in files))
+        self.assertEqual(sum(bool(file["is_project_data"]) for file in files), 2)
+        self.assertEqual(rows[-1]["preview"]["entity_type_label"], "Commercial farmer")
+
+    def test_new_layout_rejects_entity_mismatches_and_raw_path_traversal(self):
+        job, _ = self.export("farmer")
+        with self.assertRaisesRegex(ValueError, "entity type"):
+            v2.job_directory(self.root / "output", {**job, "entity_type": "retailer"})
+        with self.assertRaisesRegex(ValueError, "raw project export path"):
+            v2.raw_export_path(self.root / "output", {"output_layout": "entity_survey",
+                "entity_type": "commercial_farmer", "survey_name": "../escape",
+                "relative_path": "commercial_farmer/../escape/raw/file.csv"})
+
+    def test_project_permissions_include_new_raw_exports_and_exclude_diagnostic_raw_files(self):
+        processed = upload(pipeline_version="V2", project_key="V2:Project", is_project_data=True,
+                           relative_path="retailer/Label/data/Label__ALP_Farmer_FullProcessedDataWithLabels.csv")
+        raw = upload(pipeline_version="V2", project_key="V2:Project", is_project_data=False,
+                     relative_path="commercial_farmer/Label/raw/Label__surveycto_data.csv")
+        diagnostics = upload(pipeline_version="V2", project_key="V2:Project", is_project_data=False,
+                             relative_path="retailer/Label/raw/all/Label__surveycto_data.csv")
+        unassigned = {**raw, "project_key": "V2:Other"}
+        rows = _filter_project_file_uploads([processed, raw, diagnostics, unassigned], [], "restricted", {"V2:Project"})
+        self.assertEqual(rows, [processed, raw])
+
+
 class VersionRoutingTests(unittest.TestCase):
     def test_normal_v3_runs_force_surveycto_and_webhook_keeps_test_mode(self):
         with patch.object(service.v3, "run_pipeline_and_snapshot") as run:

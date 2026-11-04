@@ -66,3 +66,50 @@ test("prefers the raw export when a project survey has both raw and processed fi
   assert.equal(rows.length, 1);
   assert.equal(rows[0].web_url, "https://example.test/raw.csv");
 });
+
+test("uses configured labels and keeps shared survey names separate across entity types", () => {
+  const label = "Shared survey";
+  const rows = groupProjectFiles([
+    ...["farmer", "retailer"].map((entity) => ({
+      pipeline_version: "V2", project_key: "V2:Source project", is_project_data: true,
+      relative_path: `${entity}/${label}/data/${label}__ALP_Farmer_FullProcessedDataWithLabels.csv`,
+      web_url: `https://example.test/${entity}.csv`,
+    })),
+    {
+      pipeline_version: "V2", project_key: "V2:Source project", is_project_data: false,
+      relative_path: `commercial_farmer/${label}/raw/${label}__surveycto_data.csv`,
+      web_url: "https://example.test/commercial.csv",
+    },
+  ]);
+  assert.equal(rows.length, 3);
+  assert.equal(new Set(rows.map((row) => row.id)).size, 3);
+  assert.deepEqual(rows.map((row) => row.file_name), [label, label, label]);
+  assert.deepEqual(rows.map((row) => row.folder), [
+    `V2/farmer/${label}/data`, `V2/retailer/${label}/data`, `V2/commercial_farmer/${label}/raw`,
+  ]);
+  assert.equal(rows[0].web_url, "https://example.test/farmer.csv");
+});
+
+test("supports a reprocessed label in a prefixed PO filename", () => {
+  const label = "Baseline (Reprocessed)";
+  const rows = groupProjectFiles([{
+    pipeline_version: "V2", project_key: "V2:Original source project", is_project_data: true,
+    relative_path: `po/${label}/data/${label}__ALP_PO_FullProcessedDataWithLabel.csv`,
+    web_url: "https://example.test/po.csv",
+  }]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].file_name, label);
+  assert.equal(rows[0].project_key, "V2:Original source project");
+});
+
+test("new raw exports retain failed upload status and diagnostics stay hidden", () => {
+  const rows = groupProjectFiles([
+    {pipeline_version: "V2", project_key: "V2:Project", is_project_data: false, status: "failed",
+      relative_path: "commercial_farmer/Configured label/raw/Configured label__surveycto_data.csv"},
+    {pipeline_version: "V2", project_key: "V2:Project", is_project_data: false,
+      relative_path: "farmer/Configured label/raw/all/Configured label__surveycto_data.csv"},
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].file_name, "Configured label");
+  assert.equal(rows[0].status, "failed");
+});
