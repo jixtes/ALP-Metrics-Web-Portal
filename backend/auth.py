@@ -646,6 +646,21 @@ def _serialize_user(user: User | None) -> dict | None:
     if not user:
         return None
     primary_role = _primary_role(user)
+    access = {
+        "email": user.email,
+        "allowedProjectRefs": sorted(_load_json_list(user.allowed_project_refs_json)),
+        "roles": [
+            {
+                "name": role.name,
+                "projectScope": role.project_scope,
+                "reportScope": role.report_scope,
+                "uploadScope": role.upload_scope,
+                "allowedProjectRefs": sorted(_load_json_list(role.allowed_project_refs_json)),
+                "allowedReportIds": sorted(_load_json_list(role.allowed_report_ids_json)),
+            }
+            for role in sorted(user.roles, key=lambda role: role.name)
+        ],
+    }
     return {
         "id": user.id,
         "email": user.email,
@@ -654,6 +669,7 @@ def _serialize_user(user: User | None) -> dict | None:
         "primaryRole": primary_role.name if primary_role else None,
         "uploadScope": primary_role.upload_scope if primary_role else "all",
         "allowedProjectRefs": _load_json_list(user.allowed_project_refs_json),
+        "accessRevision": hashlib.sha256(json.dumps(access, sort_keys=True).encode()).hexdigest(),
     }
 
 

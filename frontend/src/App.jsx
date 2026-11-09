@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import PipelineVersionSelect from "./components/PipelineVersionSelect.jsx";
 import { groupProjectFiles } from "./dataFiles.js";
 import { createPowerBIReportSession } from "./powerbiSession.js";
+import { createAccessMonitor, getPortalPath, sessionAccessKey } from "./authSession.js";
 import alpLogo from "./assets/alp-logo.png";
 import ifcLogo from "./assets/ifc-logo.svg";
 
 const RESET_PASSWORD_PATH = "/reset-password";
 const POWERBI_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/powerbi-client@2.23.9/dist/powerbi.js";
-const INDIVIDUAL_REPORT_ROLE = "individual_report_access";
 const SETTINGS_TABLE_PAGE_SIZE = 8;
 const DASHBOARD_TABLE_PAGE_SIZE = 10;
 
@@ -644,9 +644,9 @@ function App() {
   const isResetRoute = routePath === RESET_PASSWORD_PATH;
   const isIndividualReportRoute = routePath === "/individual-report";
   const isAuthenticated = Boolean(authUser);
+  const authAccessKey = sessionAccessKey(authUser);
   const userRoles = authUser?.roles ?? [];
   const isAdmin = userRoles.includes("admin");
-  const hasIndividualReportAccess = userRoles.includes(INDIVIDUAL_REPORT_ROLE);
   const previewRoleName = dashboard.accessPreview?.role?.name ?? "";
   const previewUserEmail = dashboard.accessPreview?.user?.email ?? "";
   const isAccessPreview = isAdmin && Boolean(userPreviewId) && Boolean(previewRoleName);
@@ -680,11 +680,39 @@ function App() {
   }, [authUser?.email, authUser?.fullName]);
 
   useEffect(() => {
-    if (isAuthenticated && hasIndividualReportAccess && routePath === "/") {
-      window.history.replaceState({}, "", "/individual-report");
-      setRoutePath("/individual-report");
+    if (!isAuthenticated || isResetRoute) return;
+    const nextPath = getPortalPath(authUser, routePath);
+    if (nextPath !== routePath) {
+      window.history.replaceState({}, "", nextPath);
+      setRoutePath(nextPath);
     }
-  }, [hasIndividualReportAccess, isAuthenticated, routePath]);
+  }, [authAccessKey, isAuthenticated, isResetRoute, routePath]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isResetRoute) return;
+    const monitor = createAccessMonitor({
+      user: authUser,
+      loadSession: async () => {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        if (!response.ok) throw new Error("Unable to check current permissions.");
+        return response.json();
+      },
+      onAccessChange: reloadForAccessChange,
+    });
+    function checkAccess() {
+      if (!document.hidden) monitor.check();
+    }
+    const timer = window.setInterval(checkAccess, 30000);
+    document.addEventListener("visibilitychange", checkAccess);
+    window.addEventListener("focus", checkAccess);
+    checkAccess();
+    return () => {
+      monitor.dispose();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", checkAccess);
+      window.removeEventListener("focus", checkAccess);
+    };
+  }, [authAccessKey, isAuthenticated, isResetRoute]);
 
   useEffect(() => {
     if (!visibleSettingsSections.some((section) => section.key === activeSettingsSection)) {
@@ -693,11 +721,20 @@ function App() {
   }, [activeSettingsSection, visibleSettingsSections]);
 
   async function refreshSession() {
-    const response = await fetch("/api/auth/session");
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
     const data = await response.json();
     setCsrfToken(data.csrfToken ?? "");
     setAuthUser(data.authenticated ? data.user ?? null : null);
     return data;
+  }
+
+  function reloadForAccessChange(user) {
+    const nextPath = getPortalPath(user, window.location.pathname);
+    if (nextPath !== window.location.pathname) {
+      window.location.replace(nextPath);
+    } else {
+      window.location.reload();
+    }
   }
 
   async function apiRequest(path, options = {}) {
@@ -1061,6 +1098,8 @@ function App() {
       return;
     }
 
+    if (isAuthenticated && getPortalPath(authUser, routePath) !== routePath) return;
+
     if (isAuthenticated && isIndividualReportRoute) {
       loadIndividualReport();
     } else if (isAuthenticated) {
@@ -1208,8 +1247,7 @@ function App() {
       setLoginMessage("");
       setCredentials({ email: "", password: "", remember: false });
       setCurrentView("dashboard");
-      const landingPath =
-        data.user?.roles?.includes(INDIVIDUAL_REPORT_ROLE) || isIndividualReportRoute ? "/individual-report" : "/";
+      const landingPath = getPortalPath(data.user);
       setRoutePath(landingPath);
       window.history.replaceState({}, "", landingPath);
     } catch (submitError) {
@@ -1664,6 +1702,10 @@ function App() {
           fullName: profileForm.fullName.trim(),
         },
       });
+      if (sessionAccessKey(data.user) !== authAccessKey) {
+        reloadForAccessChange(data.user);
+        return;
+      }
       setAuthUser(data.user ?? null);
       setProfileMessage("Profile updated.");
     } catch (saveError) {
@@ -1815,6 +1857,10 @@ function App() {
           : [...current, data.user];
         return [...nextUsers].sort((left, right) => left.email.localeCompare(right.email));
       });
+      if (data.user.id === authUser?.id && sessionAccessKey(data.user) !== authAccessKey) {
+        reloadForAccessChange(data.user);
+        return;
+      }
       if (editingUserId) {
         setUsersMessage(`Updated ${data.user.email}.`);
       } else if (data.email?.sent) {
