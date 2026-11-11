@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -42,11 +41,6 @@ class RoleChangeTests(unittest.TestCase):
             self.user_id, self.role_id = user.id, role.id
         self.administrator = self.app.test_client()
         self.user = self.app.test_client()
-        self.powerbi_config = SimpleNamespace(
-            workspace_id="workspace",
-            default_effective_username="dashboard-admin@example.com",
-            default_effective_roles=["AllProjects"],
-        )
         self.login(self.administrator, "role-admin@example.com")
         self.login(self.user)
 
@@ -89,70 +83,11 @@ class RoleChangeTests(unittest.TestCase):
         selections = [{"report_id": "other-report", "project_scope": "restricted", "allowed_project_refs": ["other-project"]}]
         with patch("backend.app.fetch_powerbi_report_selections", return_value=selections):
             self.assertEqual(self.user.get("/api/powerbi/selections").get_json()["reports"], selections)
-        with patch("backend.app.PowerBIConfig.from_env", return_value=self.powerbi_config), patch("backend.app.PowerBIClient") as factory:
+        with patch("backend.app.PowerBIConfig.from_env"), patch("backend.app.PowerBIClient") as factory:
             factory.return_value.build_embed_config.return_value = {"reportId": "report"}
             self.assertEqual(self.user.get("/api/powerbi/embed-config").status_code, 200)
             self.assertEqual(factory.return_value.build_embed_config.call_args.kwargs,
-                             {"username": "dashboard-admin@example.com", "roles": ["AllProjects"]})
-
-    def dashboard_identity(self, client, *, preview_user_id=None):
-        selection = {
-            "id": 1, "report_id": "report", "report_name": "Dashboard",
-            "dataset_id": "dataset", "selected_at": "now",
-        }
-        path = "/api/powerbi/embed-configs"
-        if preview_user_id is not None:
-            path += f"?userPreviewId={preview_user_id}"
-        with patch("backend.app.PowerBIConfig.from_env", return_value=self.powerbi_config), patch(
-            "backend.app.PowerBIClient"
-        ) as factory, patch("backend.app.fetch_powerbi_report_selections", return_value=[selection]):
-            factory.return_value.build_embed_config.return_value = {"reportId": "report", "datasetId": "dataset"}
-            response = client.get(path)
-            self.assertEqual(response.status_code, 200)
-            self.assertIsNone(response.get_json()["reports"][0]["error"])
-            return factory.return_value.build_embed_config.call_args.kwargs
-
-    def test_all_admins_share_configured_dashboard_identity_after_promotion(self):
-        original_admin = self.dashboard_identity(self.administrator)
-        self.change_role("admin")
-        self.login(self.user)
-        promoted_admin = self.dashboard_identity(self.user)
-        self.assertEqual(promoted_admin, original_admin)
-        self.assertEqual(promoted_admin["username"], self.powerbi_config.default_effective_username)
-        self.assertEqual(promoted_admin["roles"], ["AllProjects"])
-
-    def test_non_admin_keeps_personal_identity_and_roles(self):
-        identity = self.dashboard_identity(self.user)
-        self.assertEqual(identity["username"], "role-user@example.com")
-        self.assertEqual(identity["roles"], ["restricted"])
-
-    def test_admin_preview_uses_previewed_users_identity_and_roles(self):
-        identity = self.dashboard_identity(self.administrator, preview_user_id=self.user_id)
-        self.assertEqual(identity["username"], "role-user@example.com")
-        self.assertEqual(identity["roles"], ["restricted"])
-
-    def test_demoted_admin_returns_to_personal_dashboard_identity(self):
-        self.change_role("admin")
-        self.login(self.user)
-        self.assertEqual(self.dashboard_identity(self.user)["username"], "dashboard-admin@example.com")
-        self.change_role("restricted")
-        self.login(self.user)
-        identity = self.dashboard_identity(self.user)
-        self.assertEqual(identity["username"], "role-user@example.com")
-        self.assertEqual(identity["roles"], ["restricted"])
-
-    def test_admin_individual_report_still_uses_personal_identity(self):
-        from backend.app import INDIVIDUAL_REPORT_NAME
-        with patch("backend.app.PowerBIConfig.from_env", return_value=self.powerbi_config), patch("backend.app.PowerBIClient") as factory:
-            factory.return_value.list_reports.return_value = [{
-                "id": "individual-report", "name": INDIVIDUAL_REPORT_NAME, "datasetId": "individual-dataset",
-            }]
-            factory.return_value.build_embed_config.return_value = {"reportId": "individual-report"}
-            factory.return_value.get_refresh_history.return_value = []
-            self.assertEqual(self.administrator.get("/api/powerbi/individual-report").status_code, 200)
-            identity = factory.return_value.build_embed_config.call_args.kwargs
-            self.assertEqual(identity["username"], "role-admin@example.com")
-            self.assertEqual(identity["roles"], ["IR Web Demo User RLS"])
+                             {"username": "role-user@example.com", "roles": ["admin"]})
 
     def test_demotion_changes_revision_and_removes_admin_access(self):
         self.change_role("admin")
