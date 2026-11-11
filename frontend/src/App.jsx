@@ -1862,7 +1862,9 @@ function App() {
         return;
       }
       if (editingUserId) {
-        setUsersMessage(`Updated ${data.user.email}.`);
+        setUsersMessage(data.sessionsReset
+          ? `Updated ${data.user.email}. Their role changed; they must sign in again.`
+          : `Updated ${data.user.email}.`);
       } else if (data.email?.sent) {
         setUsersMessage(`Created ${data.user.email} and sent the password reset email.`);
       } else if (data.email?.attempted) {

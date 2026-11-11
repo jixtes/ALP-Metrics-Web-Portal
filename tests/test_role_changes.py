@@ -41,9 +41,8 @@ class RoleChangeTests(unittest.TestCase):
             self.user_id, self.role_id = user.id, role.id
         self.administrator = self.app.test_client()
         self.user = self.app.test_client()
-        for client, email in [(self.administrator, "role-admin@example.com"), (self.user, "role-user@example.com")]:
-            response = client.post("/api/auth/login", json={"email": email, "password": "role-test-password"})
-            self.assertEqual(response.status_code, 200)
+        self.login(self.administrator, "role-admin@example.com")
+        self.login(self.user)
 
     def tearDown(self):
         with self.app.app_context():
@@ -56,16 +55,27 @@ class RoleChangeTests(unittest.TestCase):
     def session_user(self):
         return self.user.get("/api/auth/session").get_json()["user"]
 
+    def login(self, client, email="role-user@example.com", *, remember=False):
+        response = client.post("/api/auth/login", json={
+            "email": email, "password": "role-test-password", "remember": remember,
+        })
+        self.assertEqual(response.status_code, 200)
+
     def change_role(self, role):
         response = self.administrator.patch(f"/api/admin/users/{self.user_id}", json={
             "role": role, "allowedProjectRefs": ["old-project"],
         })
         self.assertEqual(response.status_code, 200)
+        return response.get_json()
 
-    def test_existing_session_gains_admin_access_and_fresh_embed_identity(self):
+    def test_promotion_requires_fresh_login_then_gains_admin_access_and_embed_identity(self):
         before = self.session_user()
         self.assertEqual(self.user.get("/api/admin/users").status_code, 403)
-        self.change_role("admin")
+        response = self.change_role("admin")
+        self.assertTrue(response["sessionsReset"])
+        self.assertIsNone(self.session_user())
+        self.assertEqual(self.user.get("/api/powerbi/embed-configs", headers={"Accept": "application/json"}).status_code, 401)
+        self.login(self.user)
         after = self.session_user()
         self.assertEqual(after["roles"], ["admin"])
         self.assertNotEqual(before["accessRevision"], after["accessRevision"])
@@ -81,11 +91,57 @@ class RoleChangeTests(unittest.TestCase):
 
     def test_demotion_changes_revision_and_removes_admin_access(self):
         self.change_role("admin")
+        self.login(self.user)
         before = self.session_user()
         self.change_role("restricted")
+        self.assertIsNone(self.session_user())
+        self.assertEqual(self.user.get("/api/admin/users", headers={"Accept": "application/json"}).status_code, 401)
+        self.login(self.user)
         after = self.session_user()
         self.assertNotEqual(before["accessRevision"], after["accessRevision"])
         self.assertEqual(self.user.get("/api/admin/users").status_code, 403)
+
+    def test_role_change_invalidates_other_devices_and_remembered_logins(self):
+        other_device = self.app.test_client()
+        self.login(other_device, remember=True)
+        self.assertIsNotNone(other_device.get_cookie("remember_token"))
+        self.change_role("admin")
+        self.assertIsNone(self.session_user())
+        # Simulate a browser restart, with only the remember cookie remaining.
+        other_device.delete_cookie("session")
+        session = other_device.get("/api/auth/session").get_json()
+        self.assertFalse(session["authenticated"])
+        self.assertIsNone(session["user"])
+        # The administrator who made the change keeps their own session.
+        self.assertEqual(self.administrator.get("/api/admin/users").status_code, 200)
+
+    def test_same_role_save_preserves_existing_sessions(self):
+        before = self.session_user()
+        response = self.change_role("restricted")
+        self.assertFalse(response["sessionsReset"])
+        self.assertEqual(self.session_user(), before)
+
+    def test_display_name_edit_preserves_existing_sessions(self):
+        response = self.administrator.patch(f"/api/admin/users/{self.user_id}", json={
+            "fullName": "New display name", "role": "restricted", "allowedProjectRefs": ["old-project"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["sessionsReset"])
+        self.assertEqual(self.session_user()["fullName"], "New display name")
+
+    def test_invalid_role_update_preserves_role_and_session(self):
+        before = self.session_user()
+        response = self.administrator.patch(f"/api/admin/users/{self.user_id}", json={"role": "missing-role"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.session_user(), before)
+
+    def test_self_demotion_invalidates_the_admins_session(self):
+        administrator_id = self.administrator.get("/api/auth/session").get_json()["user"]["id"]
+        response = self.administrator.patch(f"/api/admin/users/{administrator_id}", json={"role": "restricted"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["sessionsReset"])
+        self.assertFalse(self.administrator.get("/api/auth/session").get_json()["authenticated"])
+        self.assertEqual(self.administrator.get("/api/admin/users", headers={"Accept": "application/json"}).status_code, 401)
 
     def test_rule_changes_are_visible_without_changing_role_name(self):
         before = self.session_user()

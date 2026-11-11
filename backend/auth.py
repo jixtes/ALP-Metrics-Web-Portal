@@ -501,12 +501,18 @@ def register_auth_routes(app: Flask, user_datastore: SQLAlchemyUserDatastore) ->
         if role is None:
             return jsonify({"error": "Select a valid role."}), 400
 
+        role_changed = {assigned.id for assigned in user.roles} != {role.id}
         user.email = email
         user.full_name = full_name
         user.roles = [role]
         user.allowed_project_refs_json = json.dumps(_clean_string_list(payload.get("allowedProjectRefs")))
+        if role_changed:
+            # Require a fresh login on every device, including remembered logins.
+            # Keep this in the role-update transaction so neither change can
+            # take effect without the other.
+            user_datastore.set_uniquifier(user)
         db.session.commit()
-        return jsonify({"user": _serialize_user(user)})
+        return jsonify({"user": _serialize_user(user), "sessionsReset": role_changed})
 
     @app.delete("/api/admin/users/<int:user_id>")
     @auth_required("session")

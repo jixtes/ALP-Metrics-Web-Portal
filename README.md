@@ -395,9 +395,12 @@ Existing successful job timestamps are migrated on deployment; reports without a
 recorded successful refresh show an unavailable time until one completes.
 
 Open portal tabs check the user's current permissions every 30 seconds while
-visible, and when the tab regains focus. Changes to roles or access rules reload
-the page to discard cached data and Power BI tokens. Promoted admins leave the
-individual-report page for the main portal automatically.
+visible, and when the tab regains focus. Assigning a different role in Manage
+users invalidates that user's existing sessions and remembered logins on every
+device; they must sign in again with their existing password. Saving the same
+role or editing a display name leaves sessions active. Other access-rule changes
+reload the page to discard cached data and Power BI tokens. Promoted admins
+leave the individual-report page for the main portal automatically.
 
 Run backend checks with `.venv/bin/python -m unittest discover -s tests` and
 frontend checks with `node --test frontend/src/*.test.js`.
