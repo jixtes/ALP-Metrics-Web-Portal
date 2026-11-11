@@ -19,7 +19,15 @@ POWERBI_CLIENT_SECRET=your-app-client-secret
 POWERBI_WORKSPACE_ID=
 POWERBI_REPORT_ID=
 POWERBI_DATASET_ID=
+POWERBI_DEFAULT_EFFECTIVE_USERNAME=your-full-access-dashboard-identity
+POWERBI_DEFAULT_EFFECTIVE_ROLES=AllProjects
 ```
+
+The portal uses the default effective username and roles for administrators of
+the main dashboards. These must match the identity and model roles intended to
+grant full access. Other portal users and admin previews use their individual
+identity and role names. Successful embed-token generation alone doesn't prove
+that the model's RLS rules allow any rows.
 
 The client also falls back to the existing Microsoft variables automatically:
 

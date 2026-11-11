@@ -402,6 +402,16 @@ role or editing a display name leaves sessions active. Other access-rule changes
 reload the page to discard cached data and Power BI tokens. Promoted admins
 leave the individual-report page for the main portal automatically.
 
+For the main dashboards, portal admins use the shared Power BI identity from
+`POWERBI_DEFAULT_EFFECTIVE_USERNAME` and the model roles from
+`POWERBI_DEFAULT_EFFECTIVE_ROLES` (comma-separated; defaults to `AllProjects`).
+Configure these for an identity and roles that grant the intended full dashboard
+access in every selected semantic model. Other users retain their own email and
+portal role names. Admin previews use the previewed user's email and role, so
+previewing a restricted user never inherits the admin's shared identity. The
+individual-report endpoint continues to use personal email and its dedicated RLS
+role for all users.
+
 Run backend checks with `.venv/bin/python -m unittest discover -s tests` and
 frontend checks with `node --test frontend/src/*.test.js`.
 

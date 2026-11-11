@@ -625,7 +625,9 @@ class AutoRefreshAPITests(unittest.TestCase):
                    {'id': 'r2', 'name': 'Never completed', 'datasetId': 'new-dataset'}]
         selection = {'id': 1, 'report_id': 'r1', 'report_name': 'Fieldwork', 'dataset_id': 'dataset',
                      'selected_at': 'now', 'embed_url': 'https://example.test'}
-        with patch('backend.app.PowerBIConfig.from_env', return_value=SimpleNamespace(workspace_id='workspace')), patch(
+        with patch('backend.app.PowerBIConfig.from_env', return_value=SimpleNamespace(
+                workspace_id='workspace', default_effective_username='admin@example.com',
+                default_effective_roles=['AllProjects'])), patch(
                 'backend.app.PowerBIClient') as factory, patch(
                 'backend.app.fetch_powerbi_report_selections', return_value=[selection]):
             client = factory.return_value

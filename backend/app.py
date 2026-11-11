@@ -44,12 +44,16 @@ INDIVIDUAL_REPORT_NAME = os.getenv("INDIVIDUAL_REPORT_NAME", "IR_PO_Baseline_v3_
 INDIVIDUAL_REPORT_RLS_ROLES = ["IR Web Demo User RLS"]
 
 
-def _current_powerbi_identity(preview: dict | None = None) -> tuple[str | None, list[str] | None]:
+def _current_powerbi_identity(
+    config: PowerBIConfig, preview: dict | None = None
+) -> tuple[str | None, list[str] | None]:
     username = getattr(current_user, "email", None)
     if preview:
         username = preview.get("user", {}).get("email") or username
         return username, [preview["role"]["name"]]
     roles = sorted({role.name for role in getattr(current_user, "roles", []) if getattr(role, "name", None)})
+    if "admin" in roles:
+        return config.default_effective_username, list(config.default_effective_roles)
     return username, roles or None
 
 
@@ -310,7 +314,7 @@ def create_app(config: dict | None = None) -> Flask:
         try:
             config = PowerBIConfig.from_env()
             client = PowerBIClient(config)
-            username, roles = _current_powerbi_identity()
+            username, roles = _current_powerbi_identity(config)
             return jsonify(client.build_embed_config(username=username, roles=roles))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
@@ -497,7 +501,7 @@ def create_app(config: dict | None = None) -> Flask:
 
             for selection in selections:
                 try:
-                    username, roles = _current_powerbi_identity(preview)
+                    username, roles = _current_powerbi_identity(config, preview)
                     embed_config = client.build_embed_config(
                         report_id=selection["report_id"],
                         dataset_id=selection["dataset_id"],
