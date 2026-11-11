@@ -87,12 +87,12 @@ class AutoRefreshTests(unittest.TestCase):
         self.client.refresh_dataset.assert_not_called()
         self.fabric.resize.assert_not_called()
         for _ in range(4): self.step()
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
         self.history[-1]['endTime'] = '2026-09-23T09:12:00Z'
         self.finish_refresh()
         self.assertEqual(auto.latest_job(self.db)['status'], 'completed')
         self.assertEqual(self.sku, 'F2')
-        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F32', 'F2'])
+        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F16', 'F2'])
         with connect_database(self.db) as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM pipeline_runs').fetchone()[0], 0)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM powerbi_refresh_watermarks').fetchone()[0], 0)
@@ -105,7 +105,7 @@ class AutoRefreshTests(unittest.TestCase):
         self.manual()
         for _ in range(4): self.step()
         self.assertEqual(self.client.refresh_dataset.call_count, 2)
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
 
     def test_manual_failure_resumes_restoration_after_restart(self):
         self.manual()
@@ -230,13 +230,13 @@ class AutoRefreshTests(unittest.TestCase):
     def test_full_cycle_deduplicates_semantic_models_and_restores_f2(self):
         self.save(['r1', 'r2'])
         self.start_refresh()
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
         self.assertTrue(auto.latest_job(self.db)['active'])
         self.finish_refresh()
         self.assertEqual(self.sku, 'F2')
         self.assertEqual(auto.latest_job(self.db)['status'], 'completed')
         self.assertEqual(self.client.refresh_dataset.call_count, 1)
-        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F32', 'F2'])
+        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F16', 'F2'])
 
     def test_successful_watermark_skips_unchanged_but_same_count_edit_queues(self):
         self.start_refresh()
@@ -286,7 +286,7 @@ class AutoRefreshTests(unittest.TestCase):
         self.step()
         previous = auto.successful_refreshes(self.db, 'workspace')
         self.assertIn('dataset', previous)
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
         self.step()
         self.fabric.resize.side_effect = RuntimeError('Azure unavailable')
         self.step()
@@ -354,7 +354,7 @@ class AutoRefreshTests(unittest.TestCase):
         self.now += 21601
         self.step()
         self.client.cancel_refresh.assert_called_once_with('dataset', 'refresh-1')
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
         self.finish_refresh('Cancelled')
         self.assertEqual(self.sku, 'F2')
         self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
@@ -364,12 +364,12 @@ class AutoRefreshTests(unittest.TestCase):
             self.new_run(upload_status=status)
             self.assertIsNone(auto.latest_job(self.db))
 
-    def test_powerbi_outage_cannot_leave_f32_indefinitely_when_azure_is_available(self):
+    def test_powerbi_outage_cannot_leave_f16_indefinitely_when_azure_is_available(self):
         self.start_refresh()
         self.client.get_refresh_history.side_effect = RuntimeError('Power BI unavailable')
         self.now += 21601
         self.step()
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
         self.now += 301
         for _ in range(3): self.step()
         self.assertEqual(self.sku, 'F2')
@@ -406,23 +406,23 @@ class AutoRefreshTests(unittest.TestCase):
         self.fabric.resize.assert_not_called()
         initialize_database(self.db)
         self.step()
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
 
     def test_scale_rejection_surfaces_azure_error_and_verifies_f2_without_waiting(self):
         self.new_run(); self.step()
         response = Mock(status_code=400, reason='Bad Request')
-        response.json.return_value = {'error': {'code': 'QuotaExceeded', 'message': 'Requested 32 CUs exceeds quota.'}}
+        response.json.return_value = {'error': {'code': 'QuotaExceeded', 'message': 'Requested 16 CUs exceeds quota.'}}
         self.fabric.resize.side_effect = FabricAPIError(response)
         self.step()
         job = auto.latest_job(self.db)
         self.assertEqual(job['status'], 'restoring')
         self.assertIn('QuotaExceeded', job['error'])
-        self.assertIn('Requested 32 CUs', job['error'])
+        self.assertIn('Requested 16 CUs', job['error'])
         self.step()
         self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
         self.assertEqual(self.sku, 'F2')
         self.client.refresh_dataset.assert_not_called()
-        self.fabric.resize.assert_called_once_with('F32')
+        self.fabric.resize.assert_called_once_with('F16')
 
     def test_transient_azure_scale_error_retries_and_can_complete(self):
         self.new_run(); self.step()
@@ -446,7 +446,7 @@ class AutoRefreshTests(unittest.TestCase):
         self.now += 901
         self.step()
         self.assertIn('Azure rejected the scale request', auto.latest_job(self.db)['error'])
-        self.assertIn('Timed out while scaling to F32', auto.latest_job(self.db)['error'])
+        self.assertIn('Timed out while scaling to F16', auto.latest_job(self.db)['error'])
         self.step()
         self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
         self.client.refresh_dataset.assert_not_called()
@@ -471,7 +471,7 @@ class AutoRefreshTests(unittest.TestCase):
                                                'details': [{'message': 'Missing write permission.'}]}, 'unrelated': 'not shown'}
         with patch('powerbi.fabric.requests.request', return_value=response):
             with self.assertRaises(FabricAPIError) as caught:
-                client.resize('F32')
+                client.resize('F16')
         self.assertIn('AuthorizationFailed', str(caught.exception))
         self.assertIn('Missing write permission', str(caught.exception))
         self.assertNotIn('test-token', str(caught.exception))
@@ -479,21 +479,21 @@ class AutoRefreshTests(unittest.TestCase):
         response.json.side_effect = ValueError('not JSON')
         with patch('powerbi.fabric.requests.request', return_value=response):
             with self.assertRaisesRegex(FabricAPIError, 'HTTP 403.*Forbidden'):
-                client.resize('F32')
+                client.resize('F16')
 
     def test_new_boost_target_is_persisted_before_azure_patch(self):
         self.new_run(); self.step()
-        self.assertEqual(json.loads(auto.active_job(self.db)['value'])['boostSku'], 'F32')
+        self.assertEqual(json.loads(auto.active_job(self.db)['value'])['boostSku'], 'F16')
         self.fabric.resize.assert_not_called()
         initialize_database(self.db)
         self.step()
-        self.fabric.resize.assert_called_once_with('F32')
+        self.fabric.resize.assert_called_once_with('F16')
 
-    def test_legacy_queued_job_uses_f32_when_it_starts(self):
+    def test_legacy_queued_job_uses_f16_when_it_starts(self):
         self.new_run()
         self.assertNotIn('boostSku', json.loads(auto.active_job(self.db)['value']))
         self.step(); self.step()
-        self.assertEqual(self.sku, 'F32')
+        self.assertEqual(self.sku, 'F16')
 
     def test_legacy_f16_scale_intent_resumes_and_restores_after_upgrade(self):
         self.new_run(); self.step()
@@ -529,10 +529,42 @@ class AutoRefreshTests(unittest.TestCase):
 
     def test_new_job_does_not_overwrite_unexpected_external_capacity_change(self):
         self.new_run(); self.step()
-        self.sku = 'F16'
+        self.sku = 'F32'
         self.step()
         self.fabric.resize.assert_not_called()
         self.assertEqual(auto.latest_job(self.db)['status'], 'scaling_up')
+
+    def test_existing_f32_scale_intent_resumes_and_restores_after_deployment(self):
+        self.new_run(); self.step()
+        job = auto.active_job(self.db)
+        value = json.loads(job['value'])
+        value['boostSku'] = 'F32'
+        auto._save(self.db, job, value)
+        initialize_database(self.db)
+        for _ in range(3): self.step()
+        self.assertEqual(self.sku, 'F32')
+        self.client.refresh_dataset.assert_called_once()
+        self.finish_refresh()
+        self.assertEqual(self.sku, 'F2')
+        self.assertEqual(auto.latest_job(self.db)['status'], 'completed')
+        self.assertEqual([c.args[0] for c in self.fabric.resize.call_args_list], ['F32', 'F2'])
+
+    def test_existing_f32_restoration_resumes_after_deployment(self):
+        self.start_refresh()
+        self.history[-1]['status'] = 'Failed'
+        self.step(); self.step()
+        job = auto.active_job(self.db)
+        self.assertEqual(job['status'], 'restoring')
+        value = json.loads(job['value'])
+        value['boostSku'] = 'F32'
+        auto._save(self.db, job, value)
+        self.sku = 'F32'
+        self.fabric.resize.reset_mock()
+        initialize_database(self.db)
+        self.step(); self.step()
+        self.assertEqual(self.sku, 'F2')
+        self.assertEqual(auto.latest_job(self.db)['status'], 'failed')
+        self.fabric.resize.assert_called_once_with('F2')
 
     def test_resource_id_and_allowed_sizes_are_restricted(self):
         self.assertEqual(validate_resource_id(RESOURCE), RESOURCE)
@@ -542,7 +574,10 @@ class AutoRefreshTests(unittest.TestCase):
             client = FabricClient(RESOURCE)
             with self.assertRaises(ValueError): client.resize('F64')
             request.assert_not_called()
-            client.resize('F32')
+            client.resize('F16')
+            request.assert_called_once_with('PATCH', json={'sku': {'name': 'F16', 'tier': 'Fabric'}})
+            request.reset_mock()
+            client.resize('F32')  # Existing jobs can still resume their saved target.
             request.assert_called_once_with('PATCH', json={'sku': {'name': 'F32', 'tier': 'Fabric'}})
 
 

@@ -15,7 +15,7 @@ from .database import connect_database
 from powerbi.client import PowerBIClient, PowerBIConfig
 from powerbi.fabric import FabricAPIError, FabricClient, validate_resource_id
 
-REFRESH_SKU = "F32"
+REFRESH_SKU = "F16"
 
 TERMINAL = {"completed", "failed", "skipped"}
 REFRESH_TERMINAL = {"Completed", "Failed", "Cancelled", "Canceled", "Disabled"}
@@ -304,8 +304,8 @@ def advance_job(db, job, *, fabric=None, client=None):
     if time.time() < value.get("retryAt", 0):
         return
     cfg = value["config"]
-    # Jobs already scaling/refreshing before the F32 rollout keep their original
-    # F16 target so a deployment cannot strand their restoration or resize mid-run.
+    # In-progress jobs keep their recorded target across deployments. Jobs from
+    # before boostSku was recorded used F16.
     boost_sku = value.get("boostSku", "F16")
     try:
         fabric = fabric or FabricClient(cfg["capacityResourceId"])
